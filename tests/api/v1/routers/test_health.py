@@ -21,7 +21,7 @@ def client() -> TestClient:
 @pytest.fixture
 def api_path() -> str:
     """Get the correct API path for health endpoint."""
-    return f"{settings.API_PREFIX}/health"
+    return f"{settings.API_PREFIX}/v1/health"
 
 
 def test_health_endpoint_returns_200(client: TestClient, api_path: str) -> None:
@@ -64,7 +64,7 @@ def test_health_endpoint_timestamp_is_recent_utc(client: TestClient, api_path: s
     # Use a mock to fix the current time for testing
     fixed_datetime = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
 
-    with mock.patch("app.api.v1.health.datetime") as mock_datetime:
+    with mock.patch("app.api.v1.routers.health.datetime") as mock_datetime:
         # Set up the mock
         mock_datetime.now.return_value = fixed_datetime
         mock_datetime.timezone = timezone
