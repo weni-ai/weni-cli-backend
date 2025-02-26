@@ -1,0 +1,48 @@
+[tool.poetry]
+name = "weni-cli-backend"
+version = "0.1.0"
+description = "FastAPI backend for Weni CLI"
+authors = ["Paulo Bernardo <paulo.bernardo@vtex.com>"]
+readme = "README.md"
+packages = [
+    { include = "app" },
+    { include = "tests" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.110.0"
+uvicorn = "^0.27.0"
+pydantic = "^2.5.0"
+pydantic-settings = "^2.1.0"
+httpx = "^0.26.0"
+python-dotenv = "^1.0.0"
+python-multipart = "^0.0.20"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.2.0"
+mypy = "^1.8.0"
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+black = "^24.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 119
+target-version = "py312"
+lint.select = ["E", "F", "B", "I", "N", "UP", "PL"]
+
+[tool.mypy]
+python_version = "3.12"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+strict_optional = true
+warn_redundant_casts = true
+warn_return_any = true
+warn_unused_ignores = true
