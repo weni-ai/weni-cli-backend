@@ -78,7 +78,7 @@ class TestNexusClient:
         assert client.headers == {"Authorization": auth_token}
         assert client.base_url == settings.NEXUS_BASE_URL
 
-    def test_push_agents(
+    def test_push_agents(  # noqa: PLR0913
         self,
         requests_mock: requests_mock.Mocker,
         nexus_client: NexusClient,
@@ -114,7 +114,7 @@ class TestNexusClient:
         # Verify files were present in the request
         assert "skill-test-skill" in last_request.text
 
-    def test_push_agents_error_response(
+    def test_push_agents_error_response(  # noqa: PLR0913
         self,
         requests_mock: requests_mock.Mocker,
         nexus_client: NexusClient,
