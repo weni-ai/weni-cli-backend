@@ -39,6 +39,8 @@ build/
 
 # Docker
 Dockerfile
+docker/Dockerfile
+docker-compose.yml
 .dockerignore
 
 # Tests
