@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "info"
 
+    # Nexus settings
+    NEXUS_BASE_URL: str = "https://nexus.weni.ai"
+
     @field_validator("ENVIRONMENT")
     @classmethod
     def validate_environment(cls, v: str) -> str:
