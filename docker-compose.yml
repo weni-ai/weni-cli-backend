@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  # Production service
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+    restart: unless-stopped
+    networks:
+      - weni-cli-network
+
+  # Development service with hot reloading
+  api-dev:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+    restart: unless-stopped
+    networks:
+      - weni-cli-network
+
+networks:
+  weni-cli-network:
+    driver: bridge
