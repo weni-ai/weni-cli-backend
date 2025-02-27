@@ -1,0 +1,19 @@
+name: Build CLI Backend (Push Tag)
+
+on:
+  push:
+    tags:
+      - '*.*.*-develop'
+      - '*.*.*-staging'
+      - '*.*.*'
+
+jobs:
+  call-workflow:
+    uses: weni-ai/actions-workflows/.github/workflows/reusable-workflow.yaml@main
+    with:
+      docker_image: ${{ secrets.REGISTRY_ECR }}/cli-backend
+      target_repository: weni-ai/kubernetes-manifests-platform
+      target_repository_branch: main
+      target_application: cli-backend
+      target_patch_file: deployment.json
+    secrets: inherit
