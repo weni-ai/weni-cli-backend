@@ -18,6 +18,28 @@ SUBPROCESS_TIMEOUT_SECONDS = 120
 logger = logging.getLogger(__name__)
 
 
+def install_toolkit(package_dir: Path, toolkit_version: str) -> None:
+    """
+    Install the weni-agents-toolkit into a target directory.
+    """
+    try:
+        process = subprocess.run(
+            ["pip", "install", f"weni-agents-toolkit=={toolkit_version}"],
+            capture_output=True,
+            text=True,
+            timeout=SUBPROCESS_TIMEOUT_SECONDS,
+            check=True,
+        )
+
+        logger.debug(f"Toolkit installation output: {process.stdout}")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to install toolkit: {e.stderr}")
+        raise ValueError(f"Failed to install toolkit: {e.stderr}") from e
+    except subprocess.TimeoutExpired as e:
+        logger.error(f"Timeout installing toolkit: {e}")
+        raise ValueError(f"Timeout installing toolkit (>{SUBPROCESS_TIMEOUT_SECONDS}s)") from e
+
+
 def install_dependencies(package_dir: Path, requirements_path: Path, skill_key: str, toolkit_version: str) -> None:
     """
     Install Python dependencies from requirements.txt into a target directory.
@@ -51,14 +73,6 @@ def install_dependencies(package_dir: Path, requirements_path: Path, skill_key: 
             check=True,
         )
 
-        # Manually install weni-agents-toolkit
-        process = subprocess.run(
-            ["pip", "install", f"weni-agents-toolkit=={toolkit_version}"],
-            capture_output=True,
-            text=True,
-            timeout=SUBPROCESS_TIMEOUT_SECONDS,
-            check=True,
-        )
         logger.debug(f"Dependency installation output: {process.stdout}")
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to install requirements: {e.stderr}")
@@ -140,6 +154,13 @@ def create_skill_zip(  # noqa: PLR0913
             logger.debug(f"Extracting {len(zip_ref.namelist())} files to {temp_dir}")
             zip_ref.extractall(temp_dir)
 
+        # Create package directory
+        package_dir = temp_path / "package"
+        package_dir.mkdir(exist_ok=True)
+
+        # Install toolkit in package directory
+        install_toolkit(package_dir, toolkit_version)
+
         # Check for requirements.txt
         requirements_path = temp_path / "requirements.txt"
         if requirements_path.exists():
@@ -150,10 +171,6 @@ def create_skill_zip(  # noqa: PLR0913
             if not is_valid:
                 logger.warning(f"Invalid requirements.txt in {skill_key}: {error_message}")
                 raise ValueError(f"Invalid requirements.txt: {error_message}")
-
-            # Create package directory
-            package_dir = temp_path / "package"
-            package_dir.mkdir(exist_ok=True)
 
             # Install dependencies
             install_dependencies(package_dir, requirements_path, skill_key, toolkit_version)
