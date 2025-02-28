@@ -407,9 +407,11 @@ class TestAgentConfigEndpoint:
         """Test that Nexus push happens even when there are no skills."""
         nexus_called = False
 
-        def mock_push_agents(*args: Any, **kwargs: Any) -> None:
+        def mock_push_agents(*args: Any, **kwargs: Any) -> Any:
             nonlocal nexus_called
             nexus_called = True
+            # Create a mock response object with status_code
+            return type("MockResponse", (), {"status_code": status.HTTP_200_OK, "text": "Success"})()
 
         with pytest.MonkeyPatch().context() as mp:
             # Mock empty skills
@@ -676,7 +678,9 @@ class TestPushToNexus:
         from app.api.v1.routers.agents import push_to_nexus
 
         with pytest.MonkeyPatch().context() as mp:
-            mock_client = type("MockNexusClient", (), {"push_agents": lambda self, *args, **kwargs: None})
+            # Create a mock response with status_code
+            mock_response = type("MockResponse", (), {"status_code": status.HTTP_200_OK, "text": "Success"})
+            mock_client = type("MockNexusClient", (), {"push_agents": lambda self, *args, **kwargs: mock_response()})
             mp.setattr("app.api.v1.routers.agents.NexusClient", lambda auth: mock_client())
 
             success, response = push_to_nexus(
@@ -707,3 +711,32 @@ class TestPushToNexus:
         assert response["success"] is False, "Response should indicate failure"
         assert response["data"] is not None, "Response should include data"
         assert "API error" in response["data"]["error"], "Should include the exception message"
+
+    @pytest.mark.parametrize(
+        "status_code, status_text, expected_error_fragment",
+        [
+            (status.HTTP_400_BAD_REQUEST, "Bad request error", "Failed to push agents to Nexus: 400"),
+            (status.HTTP_401_UNAUTHORIZED, "Unauthorized", "Failed to push agents to Nexus: 401"),
+            (status.HTTP_500_INTERNAL_SERVER_ERROR, "Server error", "Failed to push agents to Nexus: 500"),
+        ],
+    )
+    def test_non_200_status_codes(self, status_code: int, status_text: str, expected_error_fragment: str) -> None:
+        """Test handling of various non-200 status codes from Nexus API."""
+        from app.api.v1.routers.agents import push_to_nexus
+
+        with pytest.MonkeyPatch().context() as mp:
+            # Create a mock response with the specified non-200 status code
+            error_response = type("MockResponse", (), {"status_code": status_code, "text": status_text})
+            mock_client = type("MockNexusClient", (), {"push_agents": lambda self, *args, **kwargs: error_response()})
+            mp.setattr("app.api.v1.routers.agents.NexusClient", lambda auth: mock_client())
+
+            success, response = push_to_nexus(
+                self.project_uuid, self.definition, self.skill_mapping, self.request_id, self.authorization
+            )
+
+        assert success is False, f"Should report failure when status code is {status_code}"
+        assert response is not None, "Should return an error response"
+        assert response["success"] is False, "Response should indicate failure"
+        assert response["data"] is not None, "Response should include data"
+        assert expected_error_fragment in response["data"]["error"], "Should include status code in error"
+        assert status_text in response["data"]["error"], "Should include response text in error message"
