@@ -94,7 +94,7 @@ def build_lambda_function_file(skill_entrypoint_module: str, skill_entrypoint_cl
     return template_content.format(module=skill_entrypoint_module, class_name=skill_entrypoint_class)
 
 
-def create_skill_zip(
+def create_skill_zip(  # noqa: PLR0913
     skill_folder_zip_content: bytes,
     skill_key: str,
     project_uuid: str,

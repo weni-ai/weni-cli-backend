@@ -91,7 +91,7 @@ class TestInstallDependencies:
         install_dependencies(temp_dir, requirements_file, "test-skill", "1.0.0")
 
         # Verify subprocess.run was called with correct arguments - now called twice
-        assert mock_run.call_count == 2, "Should call subprocess.run twice"
+        assert mock_run.call_count == 2, "Should call subprocess.run twice"  # noqa: PLR2004
 
         # Check first call (requirements installation)
         first_call_args = mock_run.call_args_list[0][0][0]
