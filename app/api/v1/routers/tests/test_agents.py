@@ -743,9 +743,9 @@ class TestPushToNexus:
     @pytest.mark.parametrize(
         "status_code, status_text, expected_error_fragment",
         [
-            (status.HTTP_400_BAD_REQUEST, "Bad request error", "Failed to push agents to Nexus: 400"),
-            (status.HTTP_401_UNAUTHORIZED, "Unauthorized", "Failed to push agents to Nexus: 401"),
-            (status.HTTP_500_INTERNAL_SERVER_ERROR, "Server error", "Failed to push agents to Nexus: 500"),
+            (status.HTTP_400_BAD_REQUEST, "Bad request error", "Failed to push agents: 400"),
+            (status.HTTP_401_UNAUTHORIZED, "Unauthorized", "Failed to push agents: 401"),
+            (status.HTTP_500_INTERNAL_SERVER_ERROR, "Server error", "Failed to push agents: 500"),
         ],
     )
     def test_non_200_status_codes(self, status_code: int, status_text: str, expected_error_fragment: str) -> None:

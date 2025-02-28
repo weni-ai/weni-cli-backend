@@ -130,7 +130,7 @@ async def configure_agents(
                 yield send_response(typed_error_response, request_id=request_id)
 
                 response_data = typed_error_response.get("data") or {}
-                error_message = str(response_data.get("error", "Unknown error pushing to Nexus"))
+                error_message = str(response_data.get("error", "Unknown error while pushing agents..."))
                 raise Exception(error_message)
 
             # Final message
@@ -325,7 +325,7 @@ def push_to_nexus(
         response = nexus_client.push_agents(str(project_uuid), definition, skill_mapping)
 
         if response.status_code != status.HTTP_200_OK:
-            raise Exception(f"Failed to push agents to Nexus: {response.status_code} {response.text}")
+            raise Exception(f"Failed to push agents: {response.status_code} {response.text}")
 
         logger.info(f"Successfully pushed agents to Nexus for project {project_uuid}")
 
@@ -334,7 +334,7 @@ def push_to_nexus(
     except Exception as e:
         logger.error(f"Failed to push agents to Nexus: {str(e)}", exc_info=True)
         nexus_error: CLIResponse = {
-            "message": "Failed to push agents to Nexus",
+            "message": "Failed to push agents",
             "data": {
                 "project_uuid": str(project_uuid),
                 "error": str(e),
