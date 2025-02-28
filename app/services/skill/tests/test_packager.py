@@ -18,6 +18,7 @@ from app.services.skill.packager import (
     build_lambda_function_file,
     create_skill_zip,
     install_dependencies,
+    install_toolkit,
 )
 
 
@@ -59,6 +60,58 @@ def skill_folder_zip() -> BytesIO:
     return buffer
 
 
+class TestInstallToolkit:
+    """Tests for the install_toolkit function."""
+
+    def test_successful_installation(self, temp_dir: Path, mocker: MockerFixture) -> None:
+        """Test successful toolkit installation."""
+        # Mock subprocess.run to avoid actual installation
+        mock_process = mocker.Mock()
+        mock_process.stdout = "Successfully installed weni-agents-toolkit-1.0.0"
+        mock_run = mocker.Mock(return_value=mock_process)
+        mocker.patch("subprocess.run", mock_run)
+
+        # Call the function
+        install_toolkit(temp_dir, "1.0.0")
+
+        # Verify subprocess.run was called with correct arguments
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "pip" in call_args[0], "Should call pip"
+        assert "install" in call_args[1], "Should use install command"
+        assert "weni-agents-toolkit==1.0.0" in call_args[2], "Should specify toolkit version"
+
+        # Check timer option
+        timeout_arg = mock_run.call_args[1].get("timeout")
+        assert timeout_arg == SUBPROCESS_TIMEOUT_SECONDS, "Should set timeout"
+
+    def test_installation_failure(self, temp_dir: Path, mocker: MockerFixture) -> None:
+        """Test toolkit installation failure."""
+        # Mock subprocess.run to raise CalledProcessError
+        error = subprocess.CalledProcessError(1, ["pip", "install"], stderr="Could not find package")
+        mock_run = mocker.Mock(side_effect=error)
+        mocker.patch("subprocess.run", mock_run)
+
+        # Verify function raises ValueError
+        with pytest.raises(ValueError) as exc_info:
+            install_toolkit(temp_dir, "1.0.0")
+        assert "Failed to install toolkit" in str(exc_info.value), "Error message should be descriptive"
+        assert "Could not find package" in str(exc_info.value), "Should include the subprocess error"
+
+    def test_installation_timeout(self, temp_dir: Path, mocker: MockerFixture) -> None:
+        """Test toolkit installation timeout."""
+        # Mock subprocess.run to raise TimeoutExpired
+        error = subprocess.TimeoutExpired(["pip", "install"], SUBPROCESS_TIMEOUT_SECONDS)
+        mock_run = mocker.Mock(side_effect=error)
+        mocker.patch("subprocess.run", mock_run)
+
+        # Verify function raises ValueError
+        with pytest.raises(ValueError) as exc_info:
+            install_toolkit(temp_dir, "1.0.0")
+        assert "Timeout installing toolkit" in str(exc_info.value), "Error should mention timeout"
+        assert str(SUBPROCESS_TIMEOUT_SECONDS) in str(exc_info.value), "Should include timeout duration"
+
+
 class TestInstallDependencies:
     """Tests for the install_dependencies function."""
 
@@ -90,23 +143,15 @@ class TestInstallDependencies:
         # Call the function
         install_dependencies(temp_dir, requirements_file, "test-skill", "1.0.0")
 
-        # Verify subprocess.run was called with correct arguments - now called twice
-        assert mock_run.call_count == 2, "Should call subprocess.run twice"  # noqa: PLR2004
-
-        # Check first call (requirements installation)
-        first_call_args = mock_run.call_args_list[0][0][0]
-        assert "pip" in first_call_args[0], "Should call pip"
-        assert "install" in first_call_args, "Should use install command"
-        assert str(requirements_file) in first_call_args, "Should specify requirements file"
-
-        # Check second call (toolkit installation)
-        second_call_args = mock_run.call_args_list[1][0][0]
-        assert "pip" in second_call_args[0], "Should call pip"
-        assert "install" in second_call_args, "Should use install command"
-        assert "weni-agents-toolkit==1.0.0" in second_call_args[2], "Should install toolkit with version"
+        # Verify subprocess.run was called with correct arguments - now called once for regular dependencies
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "pip" in call_args[0], "Should call pip"
+        assert "install" in call_args[1], "Should use install command"
+        assert str(requirements_file) in call_args[5], "Should specify requirements file"
 
         # Check timer option
-        timeout_arg = mock_run.call_args_list[0][1].get("timeout")
+        timeout_arg = mock_run.call_args[1].get("timeout")
         assert timeout_arg == SUBPROCESS_TIMEOUT_SECONDS, "Should set timeout"
 
     def test_installation_failure(self, temp_dir: Path, requirements_file: Path, mocker: MockerFixture) -> None:
@@ -192,8 +237,11 @@ class TestCreateSkillZip:
         # Mock validation to return success
         mocker.patch("app.services.skill.packager.validate_requirements_file", return_value=(True, ""))
 
+        # Mock toolkit installation
+        mock_install_toolkit = mocker.patch("app.services.skill.packager.install_toolkit")
+
         # Mock dependencies installation
-        mocker.patch("app.services.skill.packager.install_dependencies")
+        mock_install_dependencies = mocker.patch("app.services.skill.packager.install_dependencies")
 
         # Mock lambda function file creation
         mocker.patch(
@@ -209,12 +257,20 @@ class TestCreateSkillZip:
         # Verify result
         assert result is not None, "Should return a file-like object"
         assert isinstance(result, BytesIO), "Should return BytesIO"
+
+        # Verify toolkit and dependencies were installed
+        mock_install_toolkit.assert_called_once()
+        mock_install_dependencies.assert_called_once()
+
         # Check that the result is a valid zip file
         with zipfile.ZipFile(result) as zip_file:
             assert "lambda_function.py" in zip_file.namelist(), "Should include lambda function"
 
     def test_invalid_requirements(self, skill_folder_zip: BytesIO, mocker: MockerFixture) -> None:
         """Test zip creation with invalid requirements."""
+        # Mock toolkit installation
+        mocker.patch("app.services.skill.packager.install_toolkit")
+
         # Mock validation to return failure
         mocker.patch(
             "app.services.skill.packager.validate_requirements_file", return_value=(False, "Invalid requirements file")
@@ -229,6 +285,9 @@ class TestCreateSkillZip:
 
     def test_installation_error(self, skill_folder_zip: BytesIO, mocker: MockerFixture) -> None:
         """Test zip creation with dependency installation error."""
+        # Mock toolkit installation
+        mocker.patch("app.services.skill.packager.install_toolkit")
+
         # Mock validation to return success
         mocker.patch("app.services.skill.packager.validate_requirements_file", return_value=(True, ""))
 
@@ -241,6 +300,20 @@ class TestCreateSkillZip:
                 skill_folder_zip.getvalue(), "test-skill", "project-123", "skill_module", "SkillHandler", "1.0.0"
             )
         assert "Installation failed" in str(exc_info.value), "Should propagate the error message"
+
+    def test_toolkit_installation_error(self, skill_folder_zip: BytesIO, mocker: MockerFixture) -> None:
+        """Test zip creation with toolkit installation error."""
+        # Mock install_toolkit to raise ValueError
+        mocker.patch(
+            "app.services.skill.packager.install_toolkit", side_effect=ValueError("Toolkit installation failed")
+        )
+
+        # Verify function raises ValueError
+        with pytest.raises(ValueError) as exc_info:
+            create_skill_zip(
+                skill_folder_zip.getvalue(), "test-skill", "project-123", "skill_module", "SkillHandler", "1.0.0"
+            )
+        assert "Toolkit installation failed" in str(exc_info.value), "Should propagate the toolkit error"
 
     def test_invalid_zip_content(self) -> None:
         """Test with invalid zip content."""
@@ -258,6 +331,12 @@ class TestCreateSkillZip:
         with zipfile.ZipFile(buffer, "w") as zip_file:
             zip_file.writestr("skill.py", "class SkillHandler: pass")
 
+        # Mock toolkit installation
+        mock_install_toolkit = mocker.patch("app.services.skill.packager.install_toolkit")
+
+        # Mock dependencies installation - should NOT be called
+        mock_install_dependencies = mocker.patch("app.services.skill.packager.install_dependencies")
+
         # Mock lambda function file creation
         mocker.patch(
             "app.services.skill.packager.build_lambda_function_file",
@@ -274,9 +353,13 @@ class TestCreateSkillZip:
         # Verify result
         assert result is not None, "Should return a file-like object"
         assert isinstance(result, BytesIO), "Should return BytesIO"
+
+        # Verify toolkit was installed but dependencies were not
+        mock_install_toolkit.assert_called_once()
+        mock_install_dependencies.assert_not_called()
+
         with zipfile.ZipFile(result) as zip_file:
             assert "lambda_function.py" in zip_file.namelist(), "Should include lambda function"
-            assert "lambda_function.py" in zip_file.namelist(), "Should include the lambda function file"
 
     def test_cleanup_on_exception(self, mocker: MockerFixture) -> None:
         """Test that temporary directory is cleaned up on exception."""
