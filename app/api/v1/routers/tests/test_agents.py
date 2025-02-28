@@ -105,6 +105,7 @@ def post_request_factory(
             data={
                 "project_uuid": str(project_uuid),
                 "definition": json.dumps(agent_definition),
+                "toolkit_version": "1.0.0",  # Add default toolkit version for tests
             },
             files={
                 TEST_SKILL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
@@ -128,6 +129,10 @@ def custom_post_request_factory(
         files_fields: dict[str, Any],
         headers: dict[str, str] | None = None,
     ) -> Any:
+        # Ensure toolkit_version is included if not explicitly provided
+        if "toolkit_version" not in data_fields:
+            data_fields["toolkit_version"] = "1.0.0"
+
         request_headers = headers if headers is not None else auth_header
         return client.post(
             api_path,
@@ -182,10 +187,12 @@ class TestAgentConfigEndpoint:
             "success": True,
             "code": "SKILL_PROCESSED",
         }
-        monkeypatch.setattr(
-            "app.api.v1.routers.agents.process_skill",
-            AsyncMock(return_value=(process_response, io.BytesIO(b"processed content"))),
-        )
+
+        # Use a custom mock for process_skill that accepts the toolkit_version parameter
+        async def mock_process_skill(*args: Any, **kwargs: Any) -> tuple[dict[str, Any], io.BytesIO]:
+            return (process_response, io.BytesIO(b"processed content"))
+
+        monkeypatch.setattr("app.api.v1.routers.agents.process_skill", mock_process_skill)
         monkeypatch.setattr(
             "app.api.v1.routers.agents.push_to_nexus",
             lambda *args, **kwargs: (True, None),
@@ -220,6 +227,7 @@ class TestAgentConfigEndpoint:
                 "missing_project_uuid",
                 {
                     "definition": json.dumps({"agents": {}}),
+                    "toolkit_version": "1.0.0",  # Add toolkit_version to avoid failing on that parameter
                 },
                 {
                     TEST_SKILL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
@@ -230,10 +238,25 @@ class TestAgentConfigEndpoint:
                 None,  # No custom setup
             ),
             (
+                "missing_toolkit_version",
+                {
+                    "project_uuid": "test-uuid",
+                    "definition": json.dumps({"agents": {}}),
+                },
+                {
+                    TEST_SKILL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
+                },
+                None,  # Use default auth header
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "Should require toolkit_version",
+                None,  # No custom setup
+            ),
+            (
                 "invalid_definition",
                 {
                     "project_uuid": "test-uuid",
                     "definition": "invalid json",
+                    "toolkit_version": "1.0.0",  # Add toolkit_version to avoid failing on that parameter
                 },
                 {
                     TEST_SKILL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
@@ -248,6 +271,7 @@ class TestAgentConfigEndpoint:
                 {
                     "project_uuid": "test-uuid",
                     "definition": json.dumps({"agents": {}}),
+                    "toolkit_version": "1.0.0",  # Add toolkit_version to avoid failing on that parameter
                 },
                 {
                     TEST_SKILL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
@@ -564,6 +588,7 @@ class TestProcessSkill:
     processed_count: ClassVar[int] = 1
     total_count: ClassVar[int] = 2
     expected_progress: ClassVar[float] = 0.55  # 1/2 * 0.7 + 0.2
+    toolkit_version: ClassVar[str] = "1.0.0"  # Add default toolkit version
 
     def test_success(self) -> None:
         """Test successful processing of a skill."""
@@ -586,6 +611,7 @@ class TestProcessSkill:
                     self.skill_definition,
                     self.processed_count,
                     self.total_count,
+                    self.toolkit_version,  # Add toolkit version parameter
                 )
             )
 
@@ -614,6 +640,7 @@ class TestProcessSkill:
                 self.skill_definition,  # Definition only contains TEST_AGENT
                 self.processed_count,
                 self.total_count,
+                self.toolkit_version,  # Add toolkit version parameter
             )
         )
 
@@ -654,6 +681,7 @@ class TestProcessSkill:
                     self.skill_definition,
                     self.processed_count,
                     self.total_count,
+                    self.toolkit_version,  # Add toolkit version parameter
                 )
             )
 
