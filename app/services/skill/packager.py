@@ -1,6 +1,7 @@
 """
 Utilities for packaging skills into deployable zip files.
 """
+
 import logging
 import os
 import shutil
@@ -174,7 +175,6 @@ def create_skill_zip(
                         # Move other files to skill/ directory
                         zip_path = f"skill/{arc_name}"
 
-                    logger.debug(f"Adding {file_path} as {zip_path}")
                     zip_out.write(file_path, arcname=zip_path)
 
         # Prepare the output
