@@ -6,6 +6,7 @@ omit =
     */__pycache__/*
     */.pytest_cache/*
     */__init__.py
+    server.py
 
 [report]
 exclude_lines =
