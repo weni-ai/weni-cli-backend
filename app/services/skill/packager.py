@@ -18,7 +18,38 @@ SUBPROCESS_TIMEOUT_SECONDS = 120
 logger = logging.getLogger(__name__)
 
 
-def install_dependencies(package_dir: Path, requirements_path: Path, skill_key: str) -> None:
+def install_toolkit(package_dir: Path, toolkit_version: str) -> None:
+    """
+    Install the weni-agents-toolkit into a target directory.
+    """
+    try:
+        process = subprocess.run(
+            [
+                "pip",
+                "install",
+                "--target",
+                str(package_dir),
+                f"weni-agents-toolkit=={toolkit_version}",
+                "--disable-pip-version-check",
+                "--no-cache-dir",
+                "--isolated",  # Isolated mode
+            ],
+            capture_output=True,
+            text=True,
+            timeout=SUBPROCESS_TIMEOUT_SECONDS,
+            check=True,
+        )
+
+        logger.debug(f"Toolkit installation output: {process.stdout}")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to install toolkit: {e.stderr}")
+        raise ValueError(f"Failed to install toolkit: {e.stderr}") from e
+    except subprocess.TimeoutExpired as e:
+        logger.error(f"Timeout installing toolkit: {e}")
+        raise ValueError(f"Timeout installing toolkit (>{SUBPROCESS_TIMEOUT_SECONDS}s)") from e
+
+
+def install_dependencies(package_dir: Path, requirements_path: Path, skill_key: str, toolkit_version: str) -> None:
     """
     Install Python dependencies from requirements.txt into a target directory.
 
@@ -26,7 +57,7 @@ def install_dependencies(package_dir: Path, requirements_path: Path, skill_key: 
         package_dir: Directory where packages will be installed
         requirements_path: Path to the requirements.txt file
         skill_key: Identifier for the skill (used for logging)
-
+        toolkit_version: The version of the toolkit
     Raises:
         ValueError: If installation fails or times out
     """
@@ -86,12 +117,13 @@ def build_lambda_function_file(skill_entrypoint_module: str, skill_entrypoint_cl
     return template_content.format(module=skill_entrypoint_module, class_name=skill_entrypoint_class)
 
 
-def create_skill_zip(
+def create_skill_zip(  # noqa: PLR0913, PLR0915
     skill_folder_zip_content: bytes,
     skill_key: str,
     project_uuid: str,
     skill_entrypoint_module: str,
     skill_entrypoint_class: str,
+    toolkit_version: str,
 ) -> BytesIO:
     """
     Create a skill zip file from a folder zip file.
@@ -107,7 +139,7 @@ def create_skill_zip(
         project_uuid: The UUID of the project
         skill_entrypoint_module: The module name containing the entrypoint
         skill_entrypoint_class: The class name to use as entrypoint
-
+        toolkit_version: The version of the toolkit
     Returns:
         BytesIO: A buffer containing the zipped skill with installed dependencies
 
@@ -131,6 +163,13 @@ def create_skill_zip(
             logger.debug(f"Extracting {len(zip_ref.namelist())} files to {temp_dir}")
             zip_ref.extractall(temp_dir)
 
+        # Create package directory
+        package_dir = temp_path / "package"
+        package_dir.mkdir(exist_ok=True)
+
+        # Install toolkit in package directory
+        install_toolkit(package_dir, toolkit_version)
+
         # Check for requirements.txt
         requirements_path = temp_path / "requirements.txt"
         if requirements_path.exists():
@@ -142,12 +181,8 @@ def create_skill_zip(
                 logger.warning(f"Invalid requirements.txt in {skill_key}: {error_message}")
                 raise ValueError(f"Invalid requirements.txt: {error_message}")
 
-            # Create package directory
-            package_dir = temp_path / "package"
-            package_dir.mkdir(exist_ok=True)
-
             # Install dependencies
-            install_dependencies(package_dir, requirements_path, skill_key)
+            install_dependencies(package_dir, requirements_path, skill_key, toolkit_version)
 
         # Create the lambda function file
         logger.info(f"Creating Lambda function for {skill_key}")
@@ -168,9 +203,12 @@ def create_skill_zip(
                     arc_name = file_path.relative_to(temp_path)
 
                     # Determine the path in the zip file
-                    if str(arc_name) == "lambda_function.py" or str(arc_name).startswith("package/"):
+                    if str(arc_name) == "lambda_function.py":
                         # Keep these at the root
                         zip_path = str(arc_name)
+                    elif str(arc_name).startswith("package/"):
+                        # move content out of /package and insert it at root
+                        zip_path = str(arc_name).replace("package/", "", 1)
                     else:
                         # Move other files to skill/ directory
                         zip_path = f"skill/{arc_name}"
