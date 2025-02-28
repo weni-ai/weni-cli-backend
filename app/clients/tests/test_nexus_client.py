@@ -1,6 +1,7 @@
 """
 Unit tests for NexusClient.
 """
+
 import json
 
 import pytest
