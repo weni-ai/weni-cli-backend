@@ -18,7 +18,7 @@ SUBPROCESS_TIMEOUT_SECONDS = 120
 logger = logging.getLogger(__name__)
 
 
-def install_dependencies(package_dir: Path, requirements_path: Path, skill_key: str) -> None:
+def install_dependencies(package_dir: Path, requirements_path: Path, skill_key: str, toolkit_version: str) -> None:
     """
     Install Python dependencies from requirements.txt into a target directory.
 
@@ -26,7 +26,7 @@ def install_dependencies(package_dir: Path, requirements_path: Path, skill_key: 
         package_dir: Directory where packages will be installed
         requirements_path: Path to the requirements.txt file
         skill_key: Identifier for the skill (used for logging)
-
+        toolkit_version: The version of the toolkit
     Raises:
         ValueError: If installation fails or times out
     """
@@ -51,6 +51,14 @@ def install_dependencies(package_dir: Path, requirements_path: Path, skill_key: 
             check=True,
         )
 
+        # Manually install weni-agents-toolkit
+        process = subprocess.run(
+            ["pip", "install", f"weni-agents-toolkit=={toolkit_version}"],
+            capture_output=True,
+            text=True,
+            timeout=SUBPROCESS_TIMEOUT_SECONDS,
+            check=True,
+        )
         logger.debug(f"Dependency installation output: {process.stdout}")
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to install requirements: {e.stderr}")
@@ -92,6 +100,7 @@ def create_skill_zip(
     project_uuid: str,
     skill_entrypoint_module: str,
     skill_entrypoint_class: str,
+    toolkit_version: str,
 ) -> BytesIO:
     """
     Create a skill zip file from a folder zip file.
@@ -107,7 +116,7 @@ def create_skill_zip(
         project_uuid: The UUID of the project
         skill_entrypoint_module: The module name containing the entrypoint
         skill_entrypoint_class: The class name to use as entrypoint
-
+        toolkit_version: The version of the toolkit
     Returns:
         BytesIO: A buffer containing the zipped skill with installed dependencies
 
@@ -147,7 +156,7 @@ def create_skill_zip(
             package_dir.mkdir(exist_ok=True)
 
             # Install dependencies
-            install_dependencies(package_dir, requirements_path, skill_key)
+            install_dependencies(package_dir, requirements_path, skill_key, toolkit_version)
 
         # Create the lambda function file
         logger.info(f"Creating Lambda function for {skill_key}")
