@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from typing import Annotated, Any, cast
 from uuid import uuid4
 
-from fastapi import APIRouter, Form, Header, Request
+from fastapi import APIRouter, Form, Header, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import UUID4, Json
 from starlette.datastructures import UploadFile
@@ -319,7 +319,11 @@ def push_to_nexus(
             for skill in agent_data["skills"]:
                 skill["source"]["entrypoint"] = "lambda_function.lambda_handler"
 
-        nexus_client.push_agents(str(project_uuid), definition, skill_mapping)
+        response = nexus_client.push_agents(str(project_uuid), definition, skill_mapping)
+
+        if response.status_code != status.HTTP_200_OK:
+            raise Exception(f"Failed to push agents to Nexus: {response.status_code} {response.text}")
+
         logger.info(f"Successfully pushed agents to Nexus for project {project_uuid}")
 
         return True, None
