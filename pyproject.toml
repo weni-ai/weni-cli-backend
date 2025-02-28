@@ -57,3 +57,27 @@ strict_optional = true
 warn_redundant_casts = true
 warn_return_any = true
 warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+addopts = "--cov=app --cov-report=term-missing --strict-markers -v"
+testpaths = ["app"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/.pytest_cache/*",
+    "*/__init__.py"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+    "raise ImportError"
+]
