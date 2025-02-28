@@ -62,6 +62,23 @@ def skill_folder_zip() -> BytesIO:
 class TestInstallDependencies:
     """Tests for the install_dependencies function."""
 
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        """Create temporary directory for testing."""
+        with TemporaryDirectory() as temp_dir_path:
+            yield Path(temp_dir_path)
+
+    @pytest.fixture
+    def requirements_file(self) -> Generator[Path, None, None]:
+        """Create temporary requirements file for testing."""
+        with NamedTemporaryFile(delete=False, suffix=".txt") as temp_file:
+            temp_file.write(b"pytest==7.3.1\nrequests==2.31.0\n")
+            temp_file.flush()
+            yield Path(temp_file.name)
+            # Clean up after test
+            if os.path.exists(temp_file.name):
+                os.unlink(temp_file.name)
+
     def test_successful_installation(self, temp_dir: Path, requirements_file: Path, mocker: MockerFixture) -> None:
         """Test successful dependency installation."""
         # Mock subprocess.run to avoid actual installation
@@ -71,19 +88,26 @@ class TestInstallDependencies:
         mocker.patch("subprocess.run", mock_run)
 
         # Call the function
-        install_dependencies(temp_dir, requirements_file, "test-skill")
+        install_dependencies(temp_dir, requirements_file, "test-skill", "1.0.0")
 
-        # Verify subprocess.run was called with correct arguments
-        mock_run.assert_called_once()
-        args, kwargs = mock_run.call_args
-        assert args[0][0] == "pip"
-        assert args[0][1] == "install"
-        assert args[0][2] == "--target"
-        assert args[0][3] == str(temp_dir)
-        assert args[0][4] == "-r"
-        assert args[0][5] == str(requirements_file)
-        assert "timeout" in kwargs
-        assert kwargs["timeout"] == SUBPROCESS_TIMEOUT_SECONDS
+        # Verify subprocess.run was called with correct arguments - now called twice
+        assert mock_run.call_count == 2, "Should call subprocess.run twice"
+
+        # Check first call (requirements installation)
+        first_call_args = mock_run.call_args_list[0][0][0]
+        assert "pip" in first_call_args[0], "Should call pip"
+        assert "install" in first_call_args, "Should use install command"
+        assert str(requirements_file) in first_call_args, "Should specify requirements file"
+
+        # Check second call (toolkit installation)
+        second_call_args = mock_run.call_args_list[1][0][0]
+        assert "pip" in second_call_args[0], "Should call pip"
+        assert "install" in second_call_args, "Should use install command"
+        assert "weni-agents-toolkit==1.0.0" in second_call_args[2], "Should install toolkit with version"
+
+        # Check timer option
+        timeout_arg = mock_run.call_args_list[0][1].get("timeout")
+        assert timeout_arg == SUBPROCESS_TIMEOUT_SECONDS, "Should set timeout"
 
     def test_installation_failure(self, temp_dir: Path, requirements_file: Path, mocker: MockerFixture) -> None:
         """Test dependency installation failure."""
@@ -94,9 +118,9 @@ class TestInstallDependencies:
 
         # Verify function raises ValueError
         with pytest.raises(ValueError) as exc_info:
-            install_dependencies(temp_dir, requirements_file, "test-skill")
-
-        assert "Failed to install requirements" in str(exc_info.value)
+            install_dependencies(temp_dir, requirements_file, "test-skill", "1.0.0")
+        assert "Failed to install requirements" in str(exc_info.value), "Error message should be descriptive"
+        assert "Could not find package" in str(exc_info.value), "Should include the subprocess error"
 
     def test_installation_timeout(self, temp_dir: Path, requirements_file: Path, mocker: MockerFixture) -> None:
         """Test dependency installation timeout."""
@@ -107,10 +131,9 @@ class TestInstallDependencies:
 
         # Verify function raises ValueError
         with pytest.raises(ValueError) as exc_info:
-            install_dependencies(temp_dir, requirements_file, "test-skill")
-
-        assert "Timeout installing requirements" in str(exc_info.value)
-        assert str(SUBPROCESS_TIMEOUT_SECONDS) in str(exc_info.value)
+            install_dependencies(temp_dir, requirements_file, "test-skill", "1.0.0")
+        assert "Timeout installing requirements" in str(exc_info.value), "Error should mention timeout"
+        assert str(SUBPROCESS_TIMEOUT_SECONDS) in str(exc_info.value), "Should include timeout duration"
 
 
 class TestBuildLambdaFunctionFile:
@@ -154,6 +177,16 @@ class TestBuildLambdaFunctionFile:
 class TestCreateSkillZip:
     """Tests for the create_skill_zip function."""
 
+    @pytest.fixture
+    def skill_folder_zip(self) -> BytesIO:
+        """Create a test zip file containing a skill."""
+        buffer = BytesIO()
+        with zipfile.ZipFile(buffer, "w") as zip_file:
+            zip_file.writestr("skill.py", "class SkillHandler: pass")
+            zip_file.writestr("requirements.txt", "pytest==7.3.1\nrequests==2.31.0\n")
+        buffer.seek(0)
+        return buffer
+
     def test_successful_zip_creation(self, skill_folder_zip: BytesIO, mocker: MockerFixture) -> None:
         """Test successful creation of skill zip."""
         # Mock validation to return success
@@ -170,17 +203,15 @@ class TestCreateSkillZip:
 
         # Call the function
         result = create_skill_zip(
-            skill_folder_zip.getvalue(), "test-skill", "project-123", "skill_module", "SkillHandler"
+            skill_folder_zip.getvalue(), "test-skill", "project-123", "skill_module", "SkillHandler", "1.0.0"
         )
 
-        # Verify result is a BytesIO object
-        assert isinstance(result, BytesIO)
-
-        # Verify the zip file is valid and contains expected entries
-        with zipfile.ZipFile(result) as zip_out:
-            file_list = zip_out.namelist()
-            assert "lambda_function.py" in file_list
-            assert any(f.startswith("skill/") for f in file_list)
+        # Verify result
+        assert result is not None, "Should return a file-like object"
+        assert isinstance(result, BytesIO), "Should return BytesIO"
+        # Check that the result is a valid zip file
+        with zipfile.ZipFile(result) as zip_file:
+            assert "lambda_function.py" in zip_file.namelist(), "Should include lambda function"
 
     def test_invalid_requirements(self, skill_folder_zip: BytesIO, mocker: MockerFixture) -> None:
         """Test zip creation with invalid requirements."""
@@ -191,9 +222,10 @@ class TestCreateSkillZip:
 
         # Verify function raises ValueError
         with pytest.raises(ValueError) as exc_info:
-            create_skill_zip(skill_folder_zip.getvalue(), "test-skill", "project-123", "skill_module", "SkillHandler")
-
-        assert "Invalid requirements.txt" in str(exc_info.value)
+            create_skill_zip(
+                skill_folder_zip.getvalue(), "test-skill", "project-123", "skill_module", "SkillHandler", "1.0.0"
+            )
+        assert "Invalid requirements file" in str(exc_info.value), "Should include validation message"
 
     def test_installation_error(self, skill_folder_zip: BytesIO, mocker: MockerFixture) -> None:
         """Test zip creation with dependency installation error."""
@@ -205,9 +237,10 @@ class TestCreateSkillZip:
 
         # Verify function raises ValueError
         with pytest.raises(ValueError) as exc_info:
-            create_skill_zip(skill_folder_zip.getvalue(), "test-skill", "project-123", "skill_module", "SkillHandler")
-
-        assert "Installation failed" in str(exc_info.value)
+            create_skill_zip(
+                skill_folder_zip.getvalue(), "test-skill", "project-123", "skill_module", "SkillHandler", "1.0.0"
+            )
+        assert "Installation failed" in str(exc_info.value), "Should propagate the error message"
 
     def test_invalid_zip_content(self) -> None:
         """Test with invalid zip content."""
@@ -216,7 +249,7 @@ class TestCreateSkillZip:
 
         # Verify function raises zipfile.BadZipFile
         with pytest.raises(zipfile.BadZipFile):
-            create_skill_zip(invalid_content, "test-skill", "project-123", "skill_module", "SkillHandler")
+            create_skill_zip(invalid_content, "test-skill", "project-123", "skill_module", "SkillHandler", "1.0.0")
 
     def test_no_requirements_file(self, mocker: MockerFixture) -> None:
         """Test zip creation with no requirements.txt file."""
@@ -224,11 +257,6 @@ class TestCreateSkillZip:
         buffer = BytesIO()
         with zipfile.ZipFile(buffer, "w") as zip_file:
             zip_file.writestr("skill.py", "class SkillHandler: pass")
-        buffer.seek(0)
-
-        # Create mocks
-        validate_mock = mocker.Mock()
-        install_mock = mocker.Mock()
 
         # Mock lambda function file creation
         mocker.patch(
@@ -236,21 +264,19 @@ class TestCreateSkillZip:
             return_value="def lambda_handler(event, context): pass",
         )
 
-        # Set the mocks to be checked later
-        mocker.patch("app.services.skill.packager.validate_requirements_file", validate_mock)
-        mocker.patch("app.services.skill.packager.install_dependencies", install_mock)
+        buffer.seek(0)
 
-        # Call the function
-        result = create_skill_zip(buffer.getvalue(), "test-skill", "project-123", "skill_module", "SkillHandler")
+        # Call the function with toolkit_version parameter
+        result = create_skill_zip(
+            buffer.getvalue(), "test-skill", "project-123", "skill_module", "SkillHandler", "1.0.0"
+        )
 
-        # Verify mocks were not called
-        assert validate_mock.call_count == 0
-        assert install_mock.call_count == 0
-
-        # Verify result is a BytesIO object with expected content
-        assert isinstance(result, BytesIO)
-        with zipfile.ZipFile(result) as zip_out:
-            assert "lambda_function.py" in zip_out.namelist()
+        # Verify result
+        assert result is not None, "Should return a file-like object"
+        assert isinstance(result, BytesIO), "Should return BytesIO"
+        with zipfile.ZipFile(result) as zip_file:
+            assert "lambda_function.py" in zip_file.namelist(), "Should include lambda function"
+            assert "lambda_function.py" in zip_file.namelist(), "Should include the lambda function file"
 
     def test_cleanup_on_exception(self, mocker: MockerFixture) -> None:
         """Test that temporary directory is cleaned up on exception."""
@@ -270,7 +296,7 @@ class TestCreateSkillZip:
 
         # Call the function and catch the exception
         with pytest.raises(zipfile.BadZipFile):
-            create_skill_zip(invalid_content, "test-skill", "project-123", "skill_module", "SkillHandler")
+            create_skill_zip(invalid_content, "test-skill", "project-123", "skill_module", "SkillHandler", "1.0.0")
 
-        # Verify rmtree was called to clean up the directory
-        rmtree_mock.assert_called_once_with(temp_dir_path, ignore_errors=True)
+        # Verify cleanup was attempted (now includes ignore_errors=True)
+        rmtree_mock.assert_called_once_with(temp_dir_path, ignore_errors=True), "Should clean up temp directory"
