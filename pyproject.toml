@@ -28,6 +28,7 @@ boto3-stubs = {extras = ["lambda"], version = "^1.37.3"}
 types-requests = "^2.32.0.20241016"
 pytest-mock = "^3.14.0"
 requests-mock = "^1.12.1"
+pytest-asyncio = "^0.25.3"
 
 [build-system]
 requires = ["poetry-core"]
@@ -38,13 +39,6 @@ line-length = 119
 target-version = "py312"
 lint.select = ["E", "F", "B", "I", "N", "UP", "PL"]
 lint.ignore = ["PLR0911"]
-
-[tool.pytest]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-testpaths = ["app"]
-addopts = "--strict-markers -v"
 
 [tool.mypy]
 python_version = "3.12"
@@ -58,9 +52,17 @@ warn_redundant_casts = true
 warn_return_any = true
 warn_unused_ignores = true
 
+[tool.pytest]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+testpaths = ["app"]
+addopts = "--strict-markers -v"
+
 [tool.pytest.ini_options]
 addopts = "--cov=app --cov-report=term-missing --strict-markers -v"
 testpaths = ["app"]
+asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["app"]
