@@ -66,6 +66,7 @@ async def configure_agents(
                     "total_files": skill_count,
                 },
                 "success": True,
+                "progress": 0.01,
                 "code": "PROCESSING_STARTED",
             }
             logger.info(f"Starting processing for {skill_count} skills")
@@ -76,7 +77,7 @@ async def configure_agents(
 
             # Process each skill file
             for key, folder_zip in skills_folders_zips_entries:
-                agent_name, skill_name = key.split(":")
+                agent_slug, skill_slug = key.split(":")
                 processed_count += 1
 
                 # Process the skill
@@ -84,8 +85,8 @@ async def configure_agents(
                     folder_zip,
                     key,
                     str(project_uuid),
-                    agent_name,
-                    skill_name,
+                    agent_slug,
+                    skill_slug,
                     definition,
                     processed_count,
                     skill_count,
@@ -94,9 +95,14 @@ async def configure_agents(
                 # Send response for this skill
                 yield send_response(response, request_id=request_id)
 
-                # Add to mapping if successful
-                if skill_zip_bytes:
-                    skill_mapping[key] = skill_zip_bytes
+                # If skill processing failed, stop and raise an exception
+                if not skill_zip_bytes:
+                    response_data: dict = response.get("data") or {}
+                    error_message = response_data.get("error", "Unknown error processing skill")
+                    raise Exception(f"Failed to process skill {key}: {error_message}")
+
+                # Add to mapping if successful (we'll only get here if processing succeeded)
+                skill_mapping[key] = skill_zip_bytes
 
             # Send progress update for Nexus upload
             nexus_response: CLIResponse = {
@@ -121,8 +127,8 @@ async def configure_agents(
                 typed_error_response = cast(CLIResponse, error_response)
                 yield send_response(typed_error_response, request_id=request_id)
 
-                response_data = typed_error_response.get("data", {})
-                error_message = str(response_data.get("error"))  # type: ignore
+                response_data = typed_error_response.get("data") or {}
+                error_message = str(response_data.get("error", "Unknown error pushing to Nexus"))
                 raise Exception(error_message)
 
             # Final message
@@ -193,9 +199,9 @@ async def process_skill(  # noqa: PLR0913
     folder_zip: bytes,
     key: str,
     project_uuid: str,
-    agent_name: str,
-    skill_name: str,
-    skill_definition: dict[str, Any],
+    agent_slug: str,
+    skill_slug: str,
+    definition: dict[str, Any],
     processed_count: int,
     total_count: int,
 ) -> tuple[CLIResponse, Any | None]:
@@ -206,9 +212,9 @@ async def process_skill(  # noqa: PLR0913
         folder_zip: The skill folder zip file content
         key: The skill key (agent:skill)
         project_uuid: The UUID of the project
-        agent_name: The name of the agent
-        skill_name: The name of the skill
-        skill_definition: The skill definition data
+        agent_slug: The slug of the agent
+        skill_slug: The name of the skill
+        definition: The definition data
         processed_count: The number of skills processed so far
         total_count: The total number of skills to process
         request_id: The request ID for correlation
@@ -216,18 +222,24 @@ async def process_skill(  # noqa: PLR0913
     Returns:
         Tuple of (response, skill_zip_bytes or None if error)
     """
-    progress = processed_count / total_count
-    logger.info(f"Processing skill {skill_name} for agent {agent_name} ({processed_count}/{total_count})")
+    # Reduce the progress to be always between 0.2 and 0.9
+    progress = 0.2 + (processed_count / total_count) * 0.7
+    logger.info(f"Processing skill {skill_slug} for agent {agent_slug} ({processed_count}/{total_count})")
 
     try:
         # Get skill entrypoint
+        agent_info = next((agent for agent in definition["agents"].values() if agent["slug"] == agent_slug), None)
+
+        if not agent_info:
+            raise ValueError(f"Could not find agent {agent_slug} in definition")
+
         skill_info = next(
-            (skill for skill in skill_definition["agents"][agent_name]["skills"] if skill["slug"] == skill_name),
+            (skill for skill in agent_info["skills"] if skill["slug"] == skill_slug),
             None,
         )
 
         if not skill_info:
-            raise ValueError(f"Could not find skill {skill_name} for agent {agent_name} in definition")
+            raise ValueError(f"Could not find skill {skill_slug} for agent {agent_slug} in definition")
 
         skill_entrypoint = skill_info["source"]["entrypoint"]
         skill_entrypoint_module = skill_entrypoint.split(".")[0]
@@ -235,7 +247,7 @@ async def process_skill(  # noqa: PLR0913
         logger.debug(f"Skill entrypoint: {skill_entrypoint_module}.{skill_entrypoint_class}")
 
         # Create zip package
-        logger.info(f"Creating zip package for skill {skill_name}")
+        logger.info(f"Creating zip package for skill {skill_slug}")
         skill_zip_bytes = create_skill_zip(
             folder_zip, key, str(project_uuid), skill_entrypoint_module, skill_entrypoint_class
         )
@@ -245,10 +257,10 @@ async def process_skill(  # noqa: PLR0913
 
         # Prepare success response
         response: CLIResponse = {
-            "message": f"Skill {skill_name} processed successfully ({processed_count}/{total_count})",
+            "message": f"Skill {skill_slug} processed successfully ({processed_count}/{total_count})",
             "data": {
-                "skill_name": skill_name,
-                "agent_name": agent_name,
+                "skill_name": skill_slug,
+                "agent_name": agent_slug,
                 "size_kb": round(file_size_kb, 2),
                 "processed": processed_count,
                 "total": total_count,
@@ -263,10 +275,10 @@ async def process_skill(  # noqa: PLR0913
     except Exception as e:
         logger.error(f"Failed to process skill {key}: {str(e)}")
         error_response: CLIResponse = {
-            "message": f"Failed to process skill {skill_name}",
+            "message": f"Failed to process skill {skill_slug}",
             "data": {
-                "skill_name": skill_name,
-                "agent_name": agent_name,
+                "skill_name": skill_slug,
+                "agent_name": agent_slug,
                 "error": str(e),
                 "processed": processed_count,
                 "total": total_count,
