@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # Environment settings
     ENVIRONMENT: str = "development"
-    LOG_LEVEL: str = "INFO"
+    LOG_LEVEL: str = "info"
 
     # Nexus settings
     NEXUS_BASE_URL: str = "https://nexus.weni.ai"
@@ -39,6 +39,20 @@ class Settings(BaseSettings):
         if v.lower() not in allowed_environments:
             raise ValueError(f"Environment must be one of {allowed_environments}")
         return v.lower()
+
+    @field_validator("LOG_LEVEL")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:  # pragma: no cover
+        """Validate and normalize log level.
+
+        Accepts case-insensitive log level but returns uppercase for consistency.
+        """
+        # Standard Python log levels
+        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+        if v.upper() not in valid_levels:
+            raise ValueError(f"Log level must be one of {valid_levels}")
+        return v.upper()
 
     model_config = SettingsConfigDict(
         env_file=".env",
