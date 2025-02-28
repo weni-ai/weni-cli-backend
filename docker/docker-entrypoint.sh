@@ -6,6 +6,7 @@ export LOG_LEVEL=${LOG_LEVEL:-"info"}
 export FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-'*'}
 export CELERY_MAX_WORKERS=${CELERY_MAX_WORKERS:-'4'}
 export CELERY_BEAT_DATABASE_FILE=${CELERY_BEAT_DATABASE_FILE:-'/tmp/celery_beat_database'}
+export WORKERS=${WORKERS:-'8'}
 #set -o errexit
 #set -o pipefail
 #set -o nounset
@@ -47,7 +48,8 @@ if [[ "start" == "$1" ]]; then
       --log-level "${LOG_LEVEL}" \
       --use-colors \
       --no-server-header \
-      --no-date-header
+      --no-date-header \
+      --workers "${WORKERS}"
 elif [[ "celery-worker" == "$1" ]]; then
     celery_queue="celery"
     if [ "${2}" ] ; then
