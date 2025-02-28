@@ -79,7 +79,7 @@ class TestInstallToolkit:
         call_args = mock_run.call_args[0][0]
         assert "pip" in call_args[0], "Should call pip"
         assert "install" in call_args[1], "Should use install command"
-        assert "weni-agents-toolkit==1.0.0" in call_args[2], "Should specify toolkit version"
+        assert "weni-agents-toolkit==1.0.0" in call_args[4], "Should specify toolkit version"
 
         # Check timer option
         timeout_arg = mock_run.call_args[1].get("timeout")

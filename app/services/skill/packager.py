@@ -24,7 +24,16 @@ def install_toolkit(package_dir: Path, toolkit_version: str) -> None:
     """
     try:
         process = subprocess.run(
-            ["pip", "install", f"weni-agents-toolkit=={toolkit_version}"],
+            [
+                "pip",
+                "install",
+                "--target",
+                str(package_dir),
+                f"weni-agents-toolkit=={toolkit_version}",
+                "--disable-pip-version-check",
+                "--no-cache-dir",
+                "--isolated",  # Isolated mode
+            ],
             capture_output=True,
             text=True,
             timeout=SUBPROCESS_TIMEOUT_SECONDS,
