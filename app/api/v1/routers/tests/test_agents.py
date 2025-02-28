@@ -383,6 +383,46 @@ class TestAgentConfigEndpoint:
         assert final_event["progress"] == 1.0, "Progress should be 100%"
         assert final_event["code"] == "PROCESSING_COMPLETED", "Should report completion"
 
+    def test_push_to_nexus_with_no_skills(self, post_request_factory: Callable[[], Any]) -> None:
+        """Test that Nexus push happens even when there are no skills."""
+        nexus_called = False
+
+        def mock_push_agents(*args: Any, **kwargs: Any) -> None:
+            nonlocal nexus_called
+            nexus_called = True
+
+        with pytest.MonkeyPatch().context() as mp:
+            # Mock empty skills
+            mp.setattr(
+                "app.api.v1.routers.agents.extract_skill_files",
+                AsyncMock(return_value={}),
+            )
+            mp.setattr(
+                "app.api.v1.routers.agents.read_skills_content",
+                AsyncMock(return_value=[]),
+            )
+
+            # Mock Nexus client to verify it's called
+            mock_nexus = type("MockNexus", (), {"push_agents": mock_push_agents})()
+            mp.setattr("app.api.v1.routers.agents.NexusClient", lambda *a, **k: mock_nexus)
+
+            response = post_request_factory()
+
+        assert response.status_code == status.HTTP_200_OK, "Should return 200 OK"
+        events = parse_streaming_response(response)
+
+        # Check that Nexus upload started event exists
+        nexus_events = [e for e in events if e.get("code") == "NEXUS_UPLOAD_STARTED"]
+        assert nexus_events, "Should include Nexus upload event even with no skills"
+
+        # Check that we have a final success message
+        final_events = [e for e in events if e.get("code") == "PROCESSING_COMPLETED"]
+        assert final_events, "Should include final completion event"
+        assert final_events[-1]["progress"] == 1.0, "Final progress should be 100%"
+
+        # Verify Nexus client was called
+        assert nexus_called, "NexusClient.push_agents should be called even with no skills"
+
 
 class TestHelperFunctions:
     """Tests for helper functions in agents.py."""

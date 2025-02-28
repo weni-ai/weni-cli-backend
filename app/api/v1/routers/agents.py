@@ -98,34 +98,32 @@ async def configure_agents(
                 if skill_zip_bytes:
                     skill_mapping[key] = skill_zip_bytes
 
-            # Send to Nexus if we have skills to send
-            if skill_mapping:
-                # Send progress update for Nexus upload
-                nexus_response: CLIResponse = {
-                    "message": "Sending agents to Nexus...",
-                    "data": {
-                        "project_uuid": str(project_uuid),
-                        "skill_count": len(skill_mapping),
-                    },
-                    "success": True,
-                    "code": "NEXUS_UPLOAD_STARTED",
-                    "progress": 0.9,
-                }
-                yield send_response(nexus_response, request_id=request_id)
+            # Send progress update for Nexus upload
+            nexus_response: CLIResponse = {
+                "message": "Sending agents to Nexus...",
+                "data": {
+                    "project_uuid": str(project_uuid),
+                    "skill_count": len(skill_mapping),
+                },
+                "success": True,
+                "code": "NEXUS_UPLOAD_STARTED",
+                "progress": 0.9,
+            }
+            yield send_response(nexus_response, request_id=request_id)
 
-                # Push to Nexus
-                success, error_response = push_to_nexus(
-                    str(project_uuid), definition, skill_mapping, request_id, authorization
-                )
+            # Push to Nexus - always push, even if no skills
+            success, error_response = push_to_nexus(
+                str(project_uuid), definition, skill_mapping, request_id, authorization
+            )
 
-                if not success and error_response is not None:
-                    # Type cast error_response to CLIResponse for type checker
-                    typed_error_response = cast(CLIResponse, error_response)
-                    yield send_response(typed_error_response, request_id=request_id)
+            if not success and error_response is not None:
+                # Type cast error_response to CLIResponse for type checker
+                typed_error_response = cast(CLIResponse, error_response)
+                yield send_response(typed_error_response, request_id=request_id)
 
-                    response_data = typed_error_response.get("data", {})
-                    error_message = str(response_data.get("error"))  # type: ignore
-                    raise Exception(error_message)
+                response_data = typed_error_response.get("data", {})
+                error_message = str(response_data.get("error"))  # type: ignore
+                raise Exception(error_message)
 
             # Final message
             final_data: CLIResponse = {
