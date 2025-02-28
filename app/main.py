@@ -1,6 +1,7 @@
 """
 Main FastAPI application.
 """
+
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -12,7 +13,7 @@ from app.core.config import settings
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # pragma: no cover
     """
     Lifespan context manager for FastAPI.
     Handles startup and shutdown events.

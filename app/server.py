@@ -1,6 +1,7 @@
 """
 Server entry point.
 """
+
 import uvicorn
 
 from app.core.config import settings
