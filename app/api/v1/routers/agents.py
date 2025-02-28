@@ -113,7 +113,7 @@ async def configure_agents(
                 },
                 "success": True,
                 "code": "NEXUS_UPLOAD_STARTED",
-                "progress": 0.9,
+                "progress": 0.99,
             }
             yield send_response(nexus_response, request_id=request_id)
 
