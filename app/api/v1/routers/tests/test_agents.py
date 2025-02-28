@@ -74,6 +74,7 @@ def agent_definition() -> dict[str, Any]:
         "agents": {
             TEST_AGENT: {
                 "name": "Test Agent",
+                "slug": TEST_AGENT,
                 "description": "A test agent",
                 "skills": [
                     {
@@ -213,7 +214,7 @@ class TestAgentConfigEndpoint:
         assert response.status_code == status.HTTP_200_OK, "Should return 200 OK"
 
     @pytest.mark.parametrize(
-        "test_id, data_fields, files_fields, headers, expected_status, error_msg",
+        "test_id, data_fields, files_fields, headers, expected_status, error_msg, custom_setup",
         [
             (
                 "missing_project_uuid",
@@ -226,6 +227,7 @@ class TestAgentConfigEndpoint:
                 None,  # Use default auth header
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "Should require project_uuid",
+                None,  # No custom setup
             ),
             (
                 "invalid_definition",
@@ -239,6 +241,7 @@ class TestAgentConfigEndpoint:
                 None,  # Use default auth header
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "Should validate definition JSON",
+                None,  # No custom setup
             ),
             (
                 "missing_authorization",
@@ -252,55 +255,72 @@ class TestAgentConfigEndpoint:
                 {},  # Empty headers - no auth
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "Should require authorization",
+                None,  # No custom setup
+            ),
+            (
+                "process_skill_error",
+                None,  # Will be set in the test
+                None,  # Will be set in the test
+                None,  # Use default auth header
+                status.HTTP_200_OK,
+                "Should handle process_skill error",
+                {
+                    "mock_process_skill": AsyncMock(side_effect=RuntimeError("Simulated error in processing")),
+                },
             ),
         ],
     )
     def test_validation_errors(  # noqa: PLR0913
         self,
         custom_post_request_factory: Callable[[dict[str, Any], dict[str, Any], dict[str, str] | None], Any],
+        post_request_factory: Callable[[], Any],
         project_uuid: UUID,
         test_id: str,
-        data_fields: dict,
-        files_fields: dict,
+        data_fields: dict | None,
+        files_fields: dict | None,
         headers: dict[str, str] | None,
         expected_status: int,
         error_msg: str,
+        custom_setup: dict | None,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Test validation errors."""
+        """Test validation errors and error handling."""
+        # Handle the process_skill_error case separately
+        if test_id == "process_skill_error":
+            with monkeypatch.context() as mp:
+                # Setup basic mocks
+                mock_upload_file = UploadFile(filename="test-skill.zip", file=io.BytesIO(TEST_CONTENT))
+                mp.setattr(
+                    "app.api.v1.routers.agents.extract_skill_files",
+                    AsyncMock(return_value={TEST_SKILL_KEY: mock_upload_file}),
+                )
+                mp.setattr(
+                    "app.api.v1.routers.agents.read_skills_content",
+                    AsyncMock(return_value=[(TEST_SKILL_KEY, TEST_CONTENT)]),
+                )
+
+                # Apply custom mocks from the setup
+                if custom_setup:
+                    for attr, mock_value in custom_setup.items():
+                        if attr == "mock_process_skill":
+                            mp.setattr("app.api.v1.routers.agents.process_skill", mock_value)
+
+                response = post_request_factory()
+
+            assert response.status_code == expected_status, error_msg
+            events = parse_streaming_response(response)
+            error_events = [e for e in events if e.get("success") is False]
+            assert error_events, "Should contain error event"
+            assert error_events[-1]["message"] == "Error processing agents", "Should report error"
+            return
+
         # For tests that need project_uuid, replace the placeholder with the real UUID
-        if test_id == "missing_authorization" and "project_uuid" in data_fields:
+        if test_id == "missing_authorization" and data_fields and "project_uuid" in data_fields:
             data_fields["project_uuid"] = str(project_uuid)
 
-        response = custom_post_request_factory(data_fields, files_fields, headers)
+        # For regular validation tests
+        response = custom_post_request_factory(data_fields or {}, files_fields or {}, headers)
         assert response.status_code == expected_status, error_msg
-
-    def test_process_skill_error(self, post_request_factory: Callable[[], Any]) -> None:
-        """Test handling of process_skill error."""
-        with pytest.MonkeyPatch().context() as mp:
-            # Setup basic mocks
-            mock_upload_file = UploadFile(filename="test-skill.zip", file=io.BytesIO(TEST_CONTENT))
-            mp.setattr(
-                "app.api.v1.routers.agents.extract_skill_files",
-                AsyncMock(return_value={TEST_SKILL_KEY: mock_upload_file}),
-            )
-            mp.setattr(
-                "app.api.v1.routers.agents.read_skills_content",
-                AsyncMock(return_value=[(TEST_SKILL_KEY, TEST_CONTENT)]),
-            )
-
-            # Mock process_skill to fail
-            mp.setattr(
-                "app.api.v1.routers.agents.process_skill",
-                AsyncMock(side_effect=RuntimeError("Simulated error in processing")),
-            )
-
-            response = post_request_factory()
-
-        assert response.status_code == status.HTTP_200_OK, "Should return 200 OK even on error"
-        events = parse_streaming_response(response)
-        error_events = [e for e in events if e.get("success") is False]
-        assert error_events, "Should contain error event"
-        assert error_events[-1]["message"] == "Error processing agents", "Should report error"
 
     def test_push_to_nexus_error_response(self, post_request_factory: Callable[[], Any]) -> None:
         """Test handling of error response from push_to_nexus."""
@@ -423,6 +443,58 @@ class TestAgentConfigEndpoint:
         # Verify Nexus client was called
         assert nexus_called, "NexusClient.push_agents should be called even with no skills"
 
+    def test_process_skill_failure_stops_processing(self, post_request_factory: Callable[[], Any]) -> None:
+        """Test that processing stops immediately if a skill fails to process."""
+        with pytest.MonkeyPatch().context() as mp:
+            # Setup basic mocks
+            mock_upload_file = UploadFile(filename="test-skill.zip", file=io.BytesIO(TEST_CONTENT))
+            mp.setattr(
+                "app.api.v1.routers.agents.extract_skill_files",
+                AsyncMock(return_value={TEST_SKILL_KEY: mock_upload_file}),
+            )
+            mp.setattr(
+                "app.api.v1.routers.agents.read_skills_content",
+                AsyncMock(return_value=[(TEST_SKILL_KEY, TEST_CONTENT)]),
+            )
+
+            # Mock process_skill to return error response and None for skill_zip
+            error_response = {
+                "message": "Failed to process skill",
+                "data": {"error": "Test error message", "skill_name": TEST_SKILL, "agent_name": TEST_AGENT},
+                "success": False,
+                "code": "SKILL_PROCESSING_ERROR",
+            }
+            mp.setattr(
+                "app.api.v1.routers.agents.process_skill",
+                AsyncMock(return_value=(error_response, None)),
+            )
+
+            # Create a tracker for push_to_nexus calls
+            push_to_nexus_called = False
+
+            def mock_push_to_nexus(*args: Any, **kwargs: Any) -> Any:
+                nonlocal push_to_nexus_called
+                push_to_nexus_called = True
+                return (True, None)
+
+            mp.setattr(
+                "app.api.v1.routers.agents.push_to_nexus",
+                mock_push_to_nexus,
+            )
+
+            response = post_request_factory()
+
+        assert response.status_code == status.HTTP_200_OK, "Should return 200 OK for streaming response"
+        events = parse_streaming_response(response)
+
+        # Verify that error response was sent
+        error_events = [e for e in events if e.get("success") is False]
+        assert error_events, "Should contain error event"
+        assert "Error processing agents" in error_events[-1]["message"], "Should include error message"
+
+        # Verify that processing stopped and never reached push_to_nexus
+        assert not push_to_nexus_called, "Should not call push_to_nexus after skill processing fails"
+
 
 class TestHelperFunctions:
     """Tests for helper functions in agents.py."""
@@ -477,18 +549,19 @@ class TestProcessSkill:
     skill_definition: ClassVar[dict[str, Any]] = {
         "agents": {
             TEST_AGENT: {
+                "slug": TEST_AGENT,
                 "skills": [
                     {
                         "slug": TEST_SKILL,
                         "source": {"entrypoint": "main.TestSkill"},
                     }
-                ]
+                ],
             }
         }
     }
     processed_count: ClassVar[int] = 1
     total_count: ClassVar[int] = 2
-    expected_progress: ClassVar[float] = 0.5  # 1/2
+    expected_progress: ClassVar[float] = 0.55  # 1/2 * 0.7 + 0.2
 
     def test_success(self) -> None:
         """Test successful processing of a skill."""
@@ -519,6 +592,34 @@ class TestProcessSkill:
         assert response["data"] is not None, "Response should include data"
         assert response["data"]["skill_name"] == self.skill_name, "Should include skill name"
         assert response["progress"] == self.expected_progress, f"Progress should be {self.expected_progress}"
+
+    def test_missing_agent_in_definition(self) -> None:
+        """Test handling of missing agent in definition."""
+        import asyncio
+
+        from app.api.v1.routers.agents import process_skill
+
+        # Use a non-existent agent name
+        missing_agent = "non-existent-agent"
+
+        response, skill_zip = asyncio.run(
+            process_skill(
+                self.folder_zip,
+                f"{missing_agent}:{self.skill_name}",
+                self.project_uuid,
+                missing_agent,  # Use the missing agent name
+                self.skill_name,
+                self.skill_definition,  # Definition only contains TEST_AGENT
+                self.processed_count,
+                self.total_count,
+            )
+        )
+
+        assert response["success"] is False, "Should report failure"
+        assert skill_zip is None, "Should not return skill zip"
+        assert response["data"] is not None, "Response should include data"
+        assert "Could not find agent" in response["data"]["error"], "Error should mention missing agent"
+        assert missing_agent in response["data"]["error"], "Error should include the missing agent name"
 
     @pytest.mark.parametrize(
         "scenario, key, skill_name, expected_error",
