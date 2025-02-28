@@ -1,0 +1,34 @@
+import json
+from weni.context import Context
+from skill.{module} import {class_name}
+
+def lambda_handler(event, context):
+    actionGroup = event.get('actionGroup')
+    function = event.get('function')
+    parameters = event.get('parameters', [])
+    session_attributes = event.get('sessionAttributes')
+    credentials = json.loads(session_attributes.get('credentials'))
+    globals = json.loads(session_attributes.get('globals'))
+            
+    context: Context = Context(credentials=credentials, parameters=parameters, globals=globals)
+    result, format = {class_name}(context)
+
+    responseBody = {
+        "TEXT": {
+            "body": json.dumps(result)
+        }
+    }
+
+    action_response = {
+        'actionGroup': actionGroup,
+        'function': function,
+        'functionResponse': {
+            'responseBody': responseBody
+        },
+        'promptSessionAttributes': {
+            'format_guidelines': format
+        }
+    }
+
+    dummy_function_response = {'response': action_response, 'messageVersion': '1.0'}
+    return dummy_function_response
