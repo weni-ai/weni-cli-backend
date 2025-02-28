@@ -203,9 +203,12 @@ def create_skill_zip(  # noqa: PLR0913
                     arc_name = file_path.relative_to(temp_path)
 
                     # Determine the path in the zip file
-                    if str(arc_name) == "lambda_function.py" or str(arc_name).startswith("package/"):
+                    if str(arc_name) == "lambda_function.py":
                         # Keep these at the root
                         zip_path = str(arc_name)
+                    elif str(arc_name).startswith("package/"):
+                        # move content out of /package and insert it at root
+                        zip_path = str(arc_name).replace("package/", "", 1)
                     else:
                         # Move other files to skill/ directory
                         zip_path = f"skill/{arc_name}"
