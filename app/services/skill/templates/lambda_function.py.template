@@ -7,8 +7,18 @@ def lambda_handler(event, context):
     function = event.get('function')
     parameters = event.get('parameters', [])
     session_attributes = event.get('sessionAttributes')
-    credentials = json.loads(session_attributes.get('credentials'))
-    globals = json.loads(session_attributes.get('globals'))
+
+    credentials = {}
+    try:
+        credentials = json.loads(session_attributes.get('credentials'))
+    except:
+        credentials = {}
+
+    globals = {}
+    try:
+        globals = json.loads(session_attributes.get('globals'))
+    except:
+        globals = {}
 
     parameters_map = {}
     for param in parameters:
