@@ -14,6 +14,7 @@ from starlette.datastructures import UploadFile
 
 from app.core.config import settings
 from app.main import app
+from app.tests.utils import AsyncMock
 
 # Common test constants
 TEST_CONTENT = b"test content"
@@ -21,25 +22,6 @@ TEST_AGENT = "test-agent"
 TEST_SKILL = "test-skill"
 TEST_SKILL_KEY = f"{TEST_AGENT}:{TEST_SKILL}"
 TEST_TOKEN = "Bearer test-token"
-
-
-class AsyncMock:
-    """Simple async mock for tests."""
-
-    def __init__(self, return_value: Any = None, side_effect: Any = None) -> None:
-        self.return_value = return_value
-        self.side_effect = side_effect
-        self.calls = 0
-
-    async def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        self.calls += 1
-        if self.side_effect:
-            if isinstance(self.side_effect, Exception):
-                raise self.side_effect
-            if callable(self.side_effect):
-                return self.side_effect(*args, **kwargs)
-            return self.side_effect
-        return self.return_value
 
 
 # Common fixtures
