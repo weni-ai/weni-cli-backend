@@ -77,6 +77,16 @@ def run_skill_request_data() -> dict[str, Any]:
         "test_definition": json.dumps(test_definition),
         "skill_name": TEST_SKILL_NAME,
         "agent_name": TEST_AGENT_NAME,
+        "skill_credentials": json.dumps(
+            {
+                "credential-test-key": "test-value",
+            }
+        ),
+        "skill_globals": json.dumps(
+            {
+                "global-test-key": "test-value",
+            }
+        ),
         "toolkit_version": "1.0.0",
     }
 
@@ -250,6 +260,8 @@ class TestRunSkillEndpoint:
                     "test_definition": json.dumps({"tests": {}}),
                     "skill_name": TEST_SKILL_NAME,
                     "agent_name": TEST_AGENT_NAME,
+                    "skill_credentials": json.dumps({}),
+                    "skill_globals": json.dumps({}),
                     "toolkit_version": "1.0.0",
                 },
                 {},  # No skill file
@@ -265,6 +277,8 @@ class TestRunSkillEndpoint:
                     "test_definition": json.dumps({"tests": {}}),
                     "skill_name": TEST_SKILL_NAME,
                     "agent_name": TEST_AGENT_NAME,
+                    "skill_credentials": json.dumps({}),
+                    "skill_globals": json.dumps({}),
                     "toolkit_version": "1.0.0",
                 },
                 {
