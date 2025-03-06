@@ -9,8 +9,12 @@ def lambda_handler(event, context):
     session_attributes = event.get('sessionAttributes')
     credentials = json.loads(session_attributes.get('credentials'))
     globals = json.loads(session_attributes.get('globals'))
+
+    parameters_map = {}
+    for param in parameters:
+        parameters_map[param["name"]] = param["value"]
             
-    context: Context = Context(credentials=credentials, parameters=parameters, globals=globals)
+    context: Context = Context(credentials=credentials, parameters=parameters_map, globals=globals)
     result, format = {class_name}(context)
 
     responseBody = {
@@ -26,7 +30,7 @@ def lambda_handler(event, context):
             'responseBody': responseBody
         },
         'promptSessionAttributes': {
-            'format_guidelines': format
+            'alwaysFormat': f"<example>{format}</example>"
         }
     }
 

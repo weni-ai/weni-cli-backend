@@ -158,6 +158,10 @@ async def run_skill_test(  # noqa: PLR0915
                     "action_group": lambda_function.function_name,
                     "function": lambda_function.function_name,
                     "parameters": test_data.get("parameters", []),
+                    "sessionAttributes": {
+                        "credentials": test_data.get("credentials", data.skill_credentials),
+                        "globals": test_data.get("globals", data.skill_globals),
+                    },
                 }
 
                 # Invoke lambda function

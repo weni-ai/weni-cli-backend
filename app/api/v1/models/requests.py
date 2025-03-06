@@ -15,3 +15,5 @@ class RunSkillRequestModel(BaseRequestModel):
     test_definition: Json
     skill_name: str
     agent_name: str
+    skill_credentials: Json
+    skill_globals: Json
