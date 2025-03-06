@@ -177,9 +177,7 @@ async def run_skill_test(  # noqa: PLR0915
                 # Get lambda function logs
                 logs_client = AWSLogsClient()
                 logs = await logs_client.get_function_logs(
-                    function_name=lambda_function.function_name,
-                    start_time=invoke_start_time,
-                    end_time=invoke_end_time,
+                    function_name=lambda_function.function_name, start_time=invoke_start_time
                 )
 
                 test_response: CLIResponse = {
@@ -197,16 +195,6 @@ async def run_skill_test(  # noqa: PLR0915
 
                 yield send_response(test_response, request_id=request_id)
 
-            response = {
-                "message": "Test run completed",
-                "data": {
-                    "project_uuid": str(data.project_uuid),
-                },
-                "success": True,
-                "code": "TEST_RUN_COMPLETED",
-            }
-            yield send_response(response, request_id=request_id)
-
         except Exception as e:
             logger.error(
                 f"Error processing test run for project {data.project_uuid}: {str(e)} - request_id: {request_id}"
@@ -223,6 +211,9 @@ async def run_skill_test(  # noqa: PLR0915
             yield send_response(error_data, request_id=request_id)
         finally:
             # Delete lambda function
-            lambda_client.delete_function(function_name=function_name)
+            try:
+                lambda_client.delete_function(function_name=function_name)
+            except Exception as e:
+                logger.error(f"Error deleting lambda function {function_name}: {str(e)}")
 
     return StreamingResponse(response_stream(), media_type="application/x-ndjson")

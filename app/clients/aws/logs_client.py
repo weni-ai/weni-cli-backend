@@ -13,7 +13,7 @@ class AWSLogsClient:
     def __init__(self) -> None:
         self.client = boto3.client("logs", region_name=settings.AWS_REGION)
 
-    async def get_function_logs(self, function_name: str, start_time: float, end_time: float) -> list[dict[str, Any]]:
+    async def get_function_logs(self, function_name: str, start_time: float) -> list[dict[str, Any]]:
         """
         Get the logs for a lambda function
 
@@ -35,8 +35,13 @@ class AWSLogsClient:
         for _ in range(max_retries):
             try:
                 response = self.client.filter_log_events(
-                    logGroupName=log_group_name, startTime=int(start_time), endTime=int(end_time), limit=50
+                    logGroupName=log_group_name, startTime=int(start_time), limit=50
                 )
+
+                if not response["events"]:
+                    logger.info(f"Log group {log_group_name} empty, waiting {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                    continue
 
                 return sorted(response["events"], key=lambda x: x["timestamp"])
 
@@ -49,4 +54,4 @@ class AWSLogsClient:
                 logger.error(f"Error getting logs for function {function_name}: {str(e)}")
                 raise e
 
-        raise Exception(f"Failed to get logs for function {function_name} after {max_retries} attempts")
+        return []
