@@ -2,6 +2,7 @@
 Skill runs endpoints for handling file uploads and processing.
 """
 
+import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Annotated
@@ -159,8 +160,8 @@ async def run_skill_test(  # noqa: PLR0915
                     "function": lambda_function.function_name,
                     "parameters": test_data.get("parameters", []),
                     "sessionAttributes": {
-                        "credentials": test_data.get("credentials", data.skill_credentials),
-                        "globals": test_data.get("globals", data.skill_globals),
+                        "credentials": json.dumps(test_data.get("credentials", data.skill_credentials)),
+                        "globals": json.dumps(test_data.get("globals", data.skill_globals)),
                     },
                 }
 
