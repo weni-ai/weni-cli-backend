@@ -154,11 +154,15 @@ async def run_skill_test(  # noqa: PLR0915
                 }
                 yield send_response(response, request_id=request_id)
 
+                parameters = []
+                for key, value in test_data.get("parameters", {}).items():
+                    parameters.append({"name": key, "value": value})
+
                 test_event = {
                     "agent_name": data.agent_name,
                     "action_group": lambda_function.function_name,
                     "function": lambda_function.function_name,
-                    "parameters": test_data.get("parameters", []),
+                    "parameters": parameters,
                     "sessionAttributes": {
                         "credentials": json.dumps(test_data.get("credentials", data.skill_credentials)),
                         "globals": json.dumps(test_data.get("globals", data.skill_globals)),
