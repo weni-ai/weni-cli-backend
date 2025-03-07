@@ -1,3 +1,4 @@
+import base64
 import datetime
 import json
 from io import BytesIO
@@ -166,6 +167,7 @@ class TestAWSLambdaClient:
             "StatusCode": HTTP_STATUS_OK,
             "Payload": mock_payload,
             "ResponseMetadata": {"RequestId": MOCK_REQUEST_ID},
+            "LogResult": base64.b64encode(b"test log"),
         }
 
         # Directly patch datetime.now to return our fixed times
@@ -178,11 +180,15 @@ class TestAWSLambdaClient:
 
         # Assert
         mock_lambda_client.invoke.assert_called_once_with(
-            FunctionName=TEST_FUNCTION_ARN, InvocationType="RequestResponse", Payload=json.dumps(test_event)
+            FunctionName=TEST_FUNCTION_ARN,
+            InvocationType="RequestResponse",
+            Payload=json.dumps(test_event),
+            LogType="Tail",
         )
 
         assert result["status_code"] == HTTP_STATUS_OK
         assert result["response"] == {"result": "success"}
+        assert result["logs"] == "test log"
         assert start_time == MOCK_START_TIME.timestamp()
         assert end_time == MOCK_END_TIME.timestamp()
 

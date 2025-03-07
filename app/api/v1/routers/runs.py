@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from starlette.datastructures import UploadFile
 
 from app.api.v1.models.requests import RunSkillRequestModel
-from app.clients.aws import AWSLambdaClient, AWSLogsClient
+from app.clients.aws import AWSLambdaClient
 from app.core.response import CLIResponse, send_response
 from app.services.skill.packager import process_skill
 
@@ -174,20 +174,11 @@ async def run_skill_test(  # noqa: PLR0915
                     lambda_function.function_arn, test_event
                 )
 
-                # Get lambda function logs
-                logs_client = AWSLogsClient()
-                logs = await logs_client.get_function_logs(
-                    function_name=lambda_function.function_name,
-                    request_id=invoke_result.get("request_id"),
-                    start_time=invoke_start_time,
-                    end_time=invoke_end_time,
-                )
-
                 test_response: CLIResponse = {
                     "message": "Test case completed",
                     "data": {
                         "test_case": test_case,
-                        "logs": logs,
+                        "logs": invoke_result.get("logs"),
                         "duration": invoke_end_time - invoke_start_time,
                         "test_status_code": invoke_result.get("status_code"),
                         "test_response": invoke_result.get("response"),
