@@ -33,16 +33,16 @@ class Settings(BaseSettings):
 
     @field_validator("ENVIRONMENT")
     @classmethod
-    def validate_environment(cls, v: str) -> str:  # pragma: no cover
+    def validate_environment(cls, value: str) -> str:  # pragma: no cover
         """Validate environment setting."""
         allowed_environments = ["development", "testing", "production"]
-        if v.lower() not in allowed_environments:
+        if value.lower() not in allowed_environments:
             raise ValueError(f"Environment must be one of {allowed_environments}")
-        return v.lower()
+        return value.lower()
 
     @field_validator("LOG_LEVEL")
     @classmethod
-    def validate_log_level(cls, v: str) -> str:  # pragma: no cover
+    def validate_log_level(cls, value: str) -> str:  # pragma: no cover
         """Validate and normalize log level.
 
         Accepts case-insensitive log level but returns uppercase for consistency.
@@ -50,9 +50,9 @@ class Settings(BaseSettings):
         # Standard Python log levels
         valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
-        if v.upper() not in valid_levels:
+        if value.upper() not in valid_levels:
             raise ValueError(f"Log level must be one of {valid_levels}")
-        return v.upper()
+        return value.upper()
 
     model_config = SettingsConfigDict(
         env_file=".env",
