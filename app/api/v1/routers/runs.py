@@ -180,6 +180,7 @@ async def run_skill_test(  # noqa: PLR0915
                     function_name=lambda_function.function_name,
                     request_id=invoke_result.get("request_id"),
                     start_time=invoke_start_time,
+                    end_time=invoke_end_time,
                 )
 
                 test_response: CLIResponse = {
