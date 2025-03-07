@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # Nexus settings
     NEXUS_BASE_URL: str = "https://nexus.weni.ai"
 
+    # AWS settings
+    AGENT_RESOURCE_ROLE_ARN: str = ""
+    AWS_REGION: str = "us-east-1"
+
     @field_validator("ENVIRONMENT")
     @classmethod
     def validate_environment(cls, value: str) -> str:  # pragma: no cover
@@ -67,6 +71,7 @@ class Settings(BaseSettings):
         super().__init__(**kwargs)
 
         logging.basicConfig(level=self.LOG_LEVEL)
+        logging.getLogger("python_multipart").setLevel(logging.ERROR)
 
         # Log environment variables
         env_vars = {k: v for k, v in os.environ.items() if k in self.__dict__}
@@ -74,7 +79,7 @@ class Settings(BaseSettings):
         logger.info(
             f"Running in {self.ENVIRONMENT} mode | Log level: {self.LOG_LEVEL}:",
         )
-        # print each key and value of env_vars
+        # log each key and value of env_vars
         logger.debug("Environment variables:")
         for key, value in env_vars.items():
             logger.debug(f"{key}={value}")
