@@ -324,7 +324,9 @@ class TestAgentConfigEndpoint:
         # Assert
         assert response.status_code == expected_status, error_msg
 
-    def test_push_to_nexus_error_response(self, post_request_factory: Callable[[], Any]) -> None:
+    def test_push_to_nexus_error_response(
+        self, post_request_factory: Callable[[], Any], mocker: MockerFixture
+    ) -> None:
         """Test handling of error response from push_to_nexus."""
         # Mock successful skill processing
         process_response = {
