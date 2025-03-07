@@ -98,10 +98,15 @@ class AWSLambdaClient:
         # Decode base64 encoded logs
         logs = base64.b64decode(invoke_response["LogResult"]).decode("utf-8")
 
+        request_id = invoke_response["ResponseMetadata"]["RequestId"]
+
+        # Remove lines that contain RequestId
+        logs = "\n".join([line for line in logs.split("\n") if request_id not in line])
+
         result = {
             "status_code": invoke_response["StatusCode"],
             "response": json.loads(invoke_response["Payload"].read()),
-            "request_id": invoke_response["ResponseMetadata"]["RequestId"],
+            "request_id": request_id,
             "logs": logs,
         }
         return result, start_time, end_time

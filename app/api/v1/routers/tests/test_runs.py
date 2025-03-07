@@ -195,15 +195,6 @@ class TestRunSkillEndpoint:
         mock_lambda_client.delete_function = mocker.MagicMock(return_value=None)
         mocker.patch("app.api.v1.routers.runs.AWSLambdaClient", return_value=mock_lambda_client)
 
-        # Mock logs client
-        mock_logs_client = mocker.MagicMock()
-        mock_logs = [
-            {"timestamp": TEST_START_TIME, "message": "START RequestId: test-request-id"},
-            {"timestamp": TEST_END_TIME, "message": "END RequestId: test-request-id"},
-        ]
-        mock_logs_client.get_function_logs = AsyncMock(return_value=mock_logs)
-        mocker.patch("app.api.v1.routers.runs.AWSLogsClient", return_value=mock_logs_client)
-
         # Mock asyncio.sleep to avoid delays in tests
         mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
 
@@ -312,10 +303,6 @@ class TestRunSkillEndpoint:
         mock_lambda_client.delete_function = mocker.MagicMock(return_value=None)
         mocker.patch("app.api.v1.routers.runs.AWSLambdaClient", return_value=mock_lambda_client)
 
-        mock_logs_client = mocker.MagicMock()
-        mock_logs_client.get_function_logs = AsyncMock(return_value=[])
-        mocker.patch("app.api.v1.routers.runs.AWSLogsClient", return_value=mock_logs_client)
-
         # Mock asyncio.sleep
         mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
 
@@ -360,11 +347,6 @@ class TestRunSkillEndpoint:
         mock_lambda_client.create_function = mocker.MagicMock(side_effect=ValueError("Function creation failed"))
         mock_lambda_client.delete_function = mocker.MagicMock(return_value=None)
         mocker.patch("app.api.v1.routers.runs.AWSLambdaClient", return_value=mock_lambda_client)
-
-        # Mock Logs client
-        mock_logs_client = mocker.MagicMock()
-        mock_logs_client.get_function_logs = AsyncMock(return_value=[])
-        mocker.patch("app.api.v1.routers.runs.AWSLogsClient", return_value=mock_logs_client)
 
         # Mock asyncio.sleep
         mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
@@ -415,11 +397,6 @@ class TestRunSkillEndpoint:
         mock_lambda_client.wait_for_function_active = AsyncMock(return_value=False)
         mock_lambda_client.delete_function = mocker.MagicMock(return_value=None)
         mocker.patch("app.api.v1.routers.runs.AWSLambdaClient", return_value=mock_lambda_client)
-
-        # Mock Logs client
-        mock_logs_client = mocker.MagicMock()
-        mock_logs_client.get_function_logs = AsyncMock(return_value=[])
-        mocker.patch("app.api.v1.routers.runs.AWSLogsClient", return_value=mock_logs_client)
 
         # Mock asyncio.sleep
         mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
@@ -474,11 +451,6 @@ class TestRunSkillEndpoint:
         mock_lambda_client.delete_function = mocker.MagicMock(return_value=None)
         mocker.patch("app.api.v1.routers.runs.AWSLambdaClient", return_value=mock_lambda_client)
 
-        # Mock Logs client
-        mock_logs_client = mocker.MagicMock()
-        mock_logs_client.get_function_logs = AsyncMock(return_value=[])
-        mocker.patch("app.api.v1.routers.runs.AWSLogsClient", return_value=mock_logs_client)
-
         # Mock asyncio.sleep
         mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
 
@@ -522,11 +494,6 @@ class TestRunSkillEndpoint:
         )
         mocker.patch("app.api.v1.routers.runs.AWSLambdaClient", return_value=mock_lambda_client)
 
-        # Mock Logs client
-        mock_logs_client = mocker.MagicMock()
-        mock_logs_client.get_function_logs = AsyncMock(return_value=[])
-        mocker.patch("app.api.v1.routers.runs.AWSLogsClient", return_value=mock_logs_client)
-
         # Mock asyncio.sleep
         mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
 
@@ -561,10 +528,6 @@ class TestRunSkillEndpoint:
         mock_lambda_client = mocker.MagicMock()
         mock_lambda_client.delete_function = mocker.MagicMock(return_value=None)
         mocker.patch("app.api.v1.routers.runs.AWSLambdaClient", return_value=mock_lambda_client)
-
-        mock_logs_client = mocker.MagicMock()
-        mock_logs_client.get_function_logs = AsyncMock(return_value=[])
-        mocker.patch("app.api.v1.routers.runs.AWSLogsClient", return_value=mock_logs_client)
 
         # Mock asyncio.sleep
         mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
@@ -619,10 +582,6 @@ class TestRunSkillEndpoint:
         mock_lambda_client = mocker.MagicMock()
         mock_lambda_client.delete_function = mocker.MagicMock(return_value=None)
         mocker.patch("app.api.v1.routers.runs.AWSLambdaClient", return_value=mock_lambda_client)
-
-        mock_logs_client = mocker.MagicMock()
-        mock_logs_client.get_function_logs = AsyncMock(return_value=[])
-        mocker.patch("app.api.v1.routers.runs.AWSLogsClient", return_value=mock_logs_client)
 
         # Mock asyncio.sleep
         mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
@@ -681,11 +640,6 @@ class TestRunSkillEndpoint:
         mock_lambda_client = mocker.MagicMock()
         mock_lambda_client.delete_function = mocker.MagicMock(return_value=None)
         mocker.patch("app.api.v1.routers.runs.AWSLambdaClient", return_value=mock_lambda_client)
-
-        # Mock Logs client
-        mock_logs_client = mocker.MagicMock()
-        mock_logs_client.get_function_logs = AsyncMock(return_value=[])
-        mocker.patch("app.api.v1.routers.runs.AWSLogsClient", return_value=mock_logs_client)
 
         # Mock asyncio.sleep
         mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
