@@ -1,7 +1,7 @@
 """Test for health endpoint."""
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import status
