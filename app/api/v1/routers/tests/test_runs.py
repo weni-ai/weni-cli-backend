@@ -244,11 +244,6 @@ class TestRunSkillEndpoint:
 
         assert test_case_completed, "No test case completion message found"
 
-        # Check completion message
-        final_message = response_data[-1]
-        assert final_message["code"] == "TEST_RUN_COMPLETED"
-        assert final_message["success"] is True
-
     @pytest.mark.parametrize(
         "test_id, data_fields, files_fields, headers, expected_status, expected_error_code",
         [

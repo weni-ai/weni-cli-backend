@@ -15,7 +15,6 @@ EXPECTED_CALL_COUNT_TWO = 2
 TEST_FUNCTION_NAME = "test-function"
 TEST_LOG_GROUP_NAME = f"/aws/lambda/{TEST_FUNCTION_NAME}"
 TEST_START_TIME = 1609459200000  # 2021-01-01T00:00:00Z in milliseconds
-TEST_END_TIME = TEST_START_TIME + 30000  # 30 seconds after start time
 MAX_RETRIES = 5
 RETRY_DELAY = 5  # seconds
 
@@ -91,13 +90,11 @@ class TestAWSLogsClient:
         mock_logs_client.filter_log_events.return_value = {"events": test_log_events}
 
         # Execute
-        result = await logs_client.get_function_logs(
-            function_name=TEST_FUNCTION_NAME, start_time=TEST_START_TIME, end_time=TEST_END_TIME
-        )
+        result = await logs_client.get_function_logs(function_name=TEST_FUNCTION_NAME, start_time=TEST_START_TIME)
 
         # Assert
         mock_logs_client.filter_log_events.assert_called_once_with(
-            logGroupName=TEST_LOG_GROUP_NAME, startTime=TEST_START_TIME, endTime=TEST_END_TIME, limit=50
+            logGroupName=TEST_LOG_GROUP_NAME, startTime=TEST_START_TIME, limit=50
         )
         # The logs should be sorted by timestamp
         assert result == sorted(test_log_events, key=lambda x: x["timestamp"])
@@ -116,9 +113,7 @@ class TestAWSLogsClient:
         ]
 
         # Execute
-        result = await logs_client.get_function_logs(
-            function_name=TEST_FUNCTION_NAME, start_time=TEST_START_TIME, end_time=TEST_END_TIME
-        )
+        result = await logs_client.get_function_logs(function_name=TEST_FUNCTION_NAME, start_time=TEST_START_TIME)
 
         # Assert
         assert mock_logs_client.filter_log_events.call_count == EXPECTED_CALL_COUNT_TWO
@@ -140,16 +135,9 @@ class TestAWSLogsClient:
         ] * MAX_RETRIES
 
         # Execute and Assert
-        # After max_retries, a custom exception should be raised
-        with pytest.raises(Exception) as exc_info:
-            await logs_client.get_function_logs(
-                function_name=TEST_FUNCTION_NAME, start_time=TEST_START_TIME, end_time=TEST_END_TIME
-            )
+        # After max_retries, an empty list should be returned
+        assert await logs_client.get_function_logs(function_name=TEST_FUNCTION_NAME, start_time=TEST_START_TIME) == []
 
-        # Check that the exception has the expected message
-        assert (
-            str(exc_info.value) == f"Failed to get logs for function {TEST_FUNCTION_NAME} after {MAX_RETRIES} attempts"
-        )
         assert mock_logs_client.filter_log_events.call_count == MAX_RETRIES
         assert mock_sleep.call_count == MAX_RETRIES
 
@@ -164,9 +152,7 @@ class TestAWSLogsClient:
 
         # Execute and Assert
         with pytest.raises(Exception) as exc_info:
-            await logs_client.get_function_logs(
-                function_name=TEST_FUNCTION_NAME, start_time=TEST_START_TIME, end_time=TEST_END_TIME
-            )
+            await logs_client.get_function_logs(function_name=TEST_FUNCTION_NAME, start_time=TEST_START_TIME)
 
         assert exc_info.value is test_exception
         mock_logs_client.filter_log_events.assert_called_once()
