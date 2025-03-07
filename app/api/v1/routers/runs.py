@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from starlette.datastructures import UploadFile
 
 from app.api.v1.models.requests import RunSkillRequestModel
-from app.clients.aws import AWSLambdaClient, AWSLogsClient
+from app.clients.aws import AWSLambdaClient
 from app.core.response import CLIResponse, send_response
 from app.services.skill.packager import process_skill
 
