@@ -1,3 +1,1 @@
-"""
-Test package for clients module.
-"""
+"""Test package for clients."""
