@@ -22,6 +22,8 @@ EXPECTED_CALL_COUNT_TWO = 2
 EXPECTED_CALL_COUNT_ONE = 1
 MAX_ATTEMPTS = 10
 
+MOCK_REQUEST_ID = "1234567890"
+
 # AWS resource values
 TEST_FUNCTION_NAME = "test-function"
 TEST_FUNCTION_ARN = "arn:aws:lambda:us-east-1:123456789012:function:test-function"
@@ -121,6 +123,7 @@ class TestAWSLambdaClient:
             Code={"ZipFile": test_code.getvalue()},
             Handler=TEST_HANDLER,
             Description="Test function description",
+            LoggingConfig={"LogGroup": settings.AGENT_LOG_GROUP},
         )
 
         assert isinstance(result, LambdaFunction)
@@ -158,7 +161,11 @@ class TestAWSLambdaClient:
         mock_payload = mocker.MagicMock()
         mock_payload.read.return_value = json.dumps({"result": "success"})
 
-        mock_lambda_client.invoke.return_value = {"StatusCode": HTTP_STATUS_OK, "Payload": mock_payload}
+        mock_lambda_client.invoke.return_value = {
+            "StatusCode": HTTP_STATUS_OK,
+            "Payload": mock_payload,
+            "ResponseMetadata": {"RequestId": MOCK_REQUEST_ID},
+        }
 
         # Mock time
         mock_time = mocker.patch("time.time")
