@@ -7,7 +7,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.api.v1.middlewares import AuthorizationMiddleware
 from app.api.v1.routes import router as api_v1_router
 from app.core.config import settings
 
@@ -43,6 +45,9 @@ def create_application() -> FastAPI:
         allow_methods=["*"],  # Allow all methods
         allow_headers=["*"],  # Allow all headers
     )
+
+    authorization_middleware = AuthorizationMiddleware()
+    app.add_middleware(BaseHTTPMiddleware, dispatch=authorization_middleware)
 
     # Include routers
     app.include_router(api_v1_router, prefix=settings.API_PREFIX)
