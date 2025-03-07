@@ -36,6 +36,7 @@ class AWSLambdaClient:
             The ARN of the created lambda function
         """
         lambda_role = settings.AGENT_RESOURCE_ROLE_ARN
+        log_group = settings.AGENT_LOG_GROUP
         logger.info(f"Creating lambda function {function_name}.")
         logger.debug(f"Function: {function_name}, Description: {description}")
 
@@ -47,6 +48,9 @@ class AWSLambdaClient:
             Code={"ZipFile": code.getvalue()},
             Handler=handler,
             Description=description,
+            LoggingConfig={
+                "LogGroup": log_group,
+            },
         )
 
         response = LambdaFunction(function_arn=lambda_function.get("FunctionArn"), function_name=function_name)
@@ -90,6 +94,7 @@ class AWSLambdaClient:
         result = {
             "status_code": invoke_response["StatusCode"],
             "response": json.loads(invoke_response["Payload"].read()),
+            "request_id": invoke_response["ResponseMetadata"]["RequestId"],
         }
         return result, start_time, end_time
 

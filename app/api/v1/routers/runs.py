@@ -45,7 +45,7 @@ async def run_skill_test(  # noqa: PLR0915
     logger.info(f"Found skill folder to process for project {data.project_uuid}")
     logger.debug(f"Skill folder zip: {skill_folder_zip}")
 
-    function_name = str(uuid4())
+    function_name = f"cli-{str(uuid4())}"
     lambda_client = AWSLambdaClient()
 
     async def response_stream() -> AsyncIterator[bytes]:
@@ -177,7 +177,9 @@ async def run_skill_test(  # noqa: PLR0915
                 # Get lambda function logs
                 logs_client = AWSLogsClient()
                 logs = await logs_client.get_function_logs(
-                    function_name=lambda_function.function_name, start_time=invoke_start_time
+                    function_name=lambda_function.function_name,
+                    request_id=invoke_result.get("request_id"),
+                    start_time=invoke_start_time,
                 )
 
                 test_response: CLIResponse = {

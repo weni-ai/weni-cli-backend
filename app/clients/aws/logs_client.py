@@ -13,12 +13,13 @@ class AWSLogsClient:
     def __init__(self) -> None:
         self.client = boto3.client("logs", region_name=settings.AWS_REGION)
 
-    async def get_function_logs(self, function_name: str, start_time: float) -> list[dict[str, Any]]:
+    async def get_function_logs(self, function_name: str, request_id: str, start_time: float) -> list[dict[str, Any]]:
         """
         Get the logs for a lambda function
 
         Args:
-            function_arn: The ARN of the lambda function to get the logs for
+            function_name: The name of the lambda function to get the logs for
+            request_id: The request id of the lambda function to get the logs for
             start_time: The start time of the logs to get
             end_time: The end time of the logs to get
 
@@ -30,12 +31,15 @@ class AWSLogsClient:
         max_retries = 5
         retry_delay = 5  # seconds
 
-        log_group_name = f"/aws/lambda/{function_name}"
+        log_group_name = settings.AGENT_LOG_GROUP
 
         for _ in range(max_retries):
             try:
                 response = self.client.filter_log_events(
-                    logGroupName=log_group_name, startTime=int(start_time), limit=50
+                    logGroupName=log_group_name,
+                    startTime=int(start_time),
+                    limit=50,
+                    filterPattern=f'"{request_id}"',
                 )
 
                 if not response["events"]:

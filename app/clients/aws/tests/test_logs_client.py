@@ -4,6 +4,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from app.clients.aws.logs_client import AWSLogsClient
+from app.core.config import settings
 
 # Constants for status codes and expected response values
 HTTP_STATUS_OK = 200
@@ -13,10 +14,11 @@ EXPECTED_CALL_COUNT_TWO = 2
 
 # Constants for test data
 TEST_FUNCTION_NAME = "test-function"
-TEST_LOG_GROUP_NAME = f"/aws/lambda/{TEST_FUNCTION_NAME}"
+TEST_LOG_GROUP_NAME = settings.AGENT_LOG_GROUP
 TEST_START_TIME = 1609459200000  # 2021-01-01T00:00:00Z in milliseconds
 MAX_RETRIES = 5
 RETRY_DELAY = 5  # seconds
+MOCK_REQUEST_ID = "1234567890"
 
 
 class MockResourceNotFoundError(Exception):
@@ -90,11 +92,13 @@ class TestAWSLogsClient:
         mock_logs_client.filter_log_events.return_value = {"events": test_log_events}
 
         # Execute
-        result = await logs_client.get_function_logs(function_name=TEST_FUNCTION_NAME, start_time=TEST_START_TIME)
+        result = await logs_client.get_function_logs(
+            function_name=TEST_FUNCTION_NAME, request_id=MOCK_REQUEST_ID, start_time=TEST_START_TIME
+        )
 
         # Assert
         mock_logs_client.filter_log_events.assert_called_once_with(
-            logGroupName=TEST_LOG_GROUP_NAME, startTime=TEST_START_TIME, limit=50
+            logGroupName=TEST_LOG_GROUP_NAME, startTime=TEST_START_TIME, limit=50, filterPattern=f'"{MOCK_REQUEST_ID}"'
         )
         # The logs should be sorted by timestamp
         assert result == sorted(test_log_events, key=lambda x: x["timestamp"])
@@ -113,7 +117,9 @@ class TestAWSLogsClient:
         ]
 
         # Execute
-        result = await logs_client.get_function_logs(function_name=TEST_FUNCTION_NAME, start_time=TEST_START_TIME)
+        result = await logs_client.get_function_logs(
+            function_name=TEST_FUNCTION_NAME, request_id=MOCK_REQUEST_ID, start_time=TEST_START_TIME
+        )
 
         # Assert
         assert mock_logs_client.filter_log_events.call_count == EXPECTED_CALL_COUNT_TWO
@@ -136,7 +142,12 @@ class TestAWSLogsClient:
 
         # Execute and Assert
         # After max_retries, an empty list should be returned
-        assert await logs_client.get_function_logs(function_name=TEST_FUNCTION_NAME, start_time=TEST_START_TIME) == []
+        assert (
+            await logs_client.get_function_logs(
+                function_name=TEST_FUNCTION_NAME, request_id=MOCK_REQUEST_ID, start_time=TEST_START_TIME
+            )
+            == []
+        )
 
         assert mock_logs_client.filter_log_events.call_count == MAX_RETRIES
         assert mock_sleep.call_count == MAX_RETRIES
@@ -152,7 +163,9 @@ class TestAWSLogsClient:
 
         # Execute and Assert
         with pytest.raises(Exception) as exc_info:
-            await logs_client.get_function_logs(function_name=TEST_FUNCTION_NAME, start_time=TEST_START_TIME)
+            await logs_client.get_function_logs(
+                function_name=TEST_FUNCTION_NAME, request_id=MOCK_REQUEST_ID, start_time=TEST_START_TIME
+            )
 
         assert exc_info.value is test_exception
         mock_logs_client.filter_log_events.assert_called_once()
