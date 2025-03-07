@@ -9,9 +9,9 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Form, Header, Request, status
 from fastapi.responses import StreamingResponse
-from pydantic import UUID4, Json
 from starlette.datastructures import UploadFile
 
+from app.api.v1.models.requests import BaseRequestModel
 from app.clients.nexus_client import NexusClient
 from app.core.response import CLIResponse, send_response
 from app.services.skill.packager import process_skill
@@ -23,9 +23,7 @@ logger = logging.getLogger(__name__)
 @router.post("")
 async def configure_agents(
     request: Request,
-    project_uuid: Annotated[UUID4, Form()],
-    definition: Annotated[Json, Form()],
-    toolkit_version: Annotated[str, Form()],
+    data: Annotated[BaseRequestModel, Form()],
     authorization: Annotated[str, Header()],
 ) -> StreamingResponse:
     """
@@ -41,8 +39,8 @@ async def configure_agents(
         StreamingResponse: Streaming response for future result handling
     """
     request_id = str(uuid4())
-    logger.info(f"Processing agent configuration for project {project_uuid} - request_id: {request_id}")
-    logger.debug(f"Agent definition: {definition}")
+    logger.info(f"Processing agent configuration for project {data.project_uuid} - request_id: {request_id}")
+    logger.debug(f"Agent definition: {data.definition}")
 
     # Access the form data with files
     form = await request.form()
@@ -50,7 +48,7 @@ async def configure_agents(
     # Extract and process skill files
     skills_folders_zips = await extract_skill_files(form)
     skill_count = len(skills_folders_zips)
-    logger.info(f"Found {skill_count} skill folders to process for project {project_uuid}")
+    logger.info(f"Found {skill_count} skill folders to process for project {data.project_uuid}")
     logger.debug(f"Skill keys: {list(skills_folders_zips.keys())}")
 
     # Create file names list for streaming
@@ -63,7 +61,7 @@ async def configure_agents(
             initial_data: CLIResponse = {
                 "message": "Processing agents...",
                 "data": {
-                    "project_uuid": str(project_uuid),
+                    "project_uuid": str(data.project_uuid),
                     "total_files": skill_count,
                 },
                 "success": True,
@@ -85,13 +83,13 @@ async def configure_agents(
                 response, skill_zip_bytes = await process_skill(
                     folder_zip,
                     key,
-                    str(project_uuid),
+                    str(data.project_uuid),
                     agent_slug,
                     skill_slug,
-                    definition,
+                    data.definition,
                     processed_count,
                     skill_count,
-                    toolkit_version,
+                    data.toolkit_version,
                 )
 
                 # Send response for this skill
@@ -110,7 +108,7 @@ async def configure_agents(
             nexus_response: CLIResponse = {
                 "message": "Updating your agents...",
                 "data": {
-                    "project_uuid": str(project_uuid),
+                    "project_uuid": str(data.project_uuid),
                     "skill_count": len(skill_mapping),
                 },
                 "success": True,
@@ -121,7 +119,7 @@ async def configure_agents(
 
             # Push to Nexus - always push, even if no skills
             success, error_response = push_to_nexus(
-                str(project_uuid), definition, skill_mapping, request_id, authorization
+                str(data.project_uuid), data.definition, skill_mapping, request_id, authorization
             )
 
             if not success and error_response is not None:
@@ -137,7 +135,7 @@ async def configure_agents(
             final_data: CLIResponse = {
                 "message": "Agents processed successfully",
                 "data": {
-                    "project_uuid": str(project_uuid),
+                    "project_uuid": str(data.project_uuid),
                     "total_files": skill_count,
                     "processed_files": len(skill_mapping),
                     "status": "completed",
@@ -149,11 +147,11 @@ async def configure_agents(
             yield send_response(final_data, request_id=request_id)
 
         except Exception as e:
-            logger.error(f"Error processing agents for project {project_uuid}: {str(e)}", exc_info=True)
+            logger.error(f"Error processing agents for project {data.project_uuid}: {str(e)}", exc_info=True)
             error_data: CLIResponse = {
                 "message": "Error processing agents",
                 "data": {
-                    "project_uuid": str(project_uuid),
+                    "project_uuid": str(data.project_uuid),
                     "error": str(e),
                     "error_type": e.__class__.__name__,
                 },
