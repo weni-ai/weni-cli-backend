@@ -48,7 +48,7 @@ def project_uuid() -> UUID:
 @pytest.fixture(scope="module")
 def auth_header() -> dict[str, str]:
     """Create an authorization header."""
-    return {"Authorization": TEST_TOKEN}
+    return {"Authorization": TEST_TOKEN, "X-Project-Uuid": str(project_uuid)}
 
 
 @pytest.fixture
@@ -274,8 +274,8 @@ class TestAgentConfigEndpoint:
                     TEST_SKILL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
                 },
                 {},  # Empty headers - no auth
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                "Should require authorization",
+                status.HTTP_400_BAD_REQUEST,
+                "Missing Authorization or X-Project-Uuid header",
                 None,  # No custom setup
             ),
             (

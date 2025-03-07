@@ -47,7 +47,7 @@ def project_uuid() -> UUID:
 @pytest.fixture(scope="module")
 def auth_header() -> dict[str, str]:
     """Return an authorization header for tests."""
-    return {"Authorization": TEST_TOKEN}
+    return {"Authorization": TEST_TOKEN, "X-Project-Uuid": str(project_uuid)}
 
 
 @pytest.fixture
@@ -276,8 +276,8 @@ class TestRunSkillEndpoint:
                     "skill": ("test_skill.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
                 },
                 {},  # Empty headers - no auth
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                None,  # No streaming response for 422
+                status.HTTP_400_BAD_REQUEST,
+                "Missing Authorization or X-Project-Uuid header",
             ),
         ],
     )
@@ -585,7 +585,7 @@ class TestRunSkillEndpoint:
             api_path,
             data=modified_data,
             files=files,
-            headers={"Authorization": TEST_TOKEN},
+            headers={"Authorization": TEST_TOKEN, "X-Project-Uuid": str(uuid4())},
         )
 
         # Assert
@@ -643,7 +643,7 @@ class TestRunSkillEndpoint:
             api_path,
             data=modified_data,
             files=files,
-            headers={"Authorization": TEST_TOKEN},
+            headers={"Authorization": TEST_TOKEN, "X-Project-Uuid": str(uuid4())},
         )
 
         # Assert
