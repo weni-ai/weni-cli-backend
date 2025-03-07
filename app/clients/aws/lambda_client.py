@@ -1,7 +1,8 @@
 import asyncio
+import base64
+import datetime
 import json
 import logging
-import time
 from io import BytesIO
 from typing import Any
 
@@ -82,19 +83,31 @@ class AWSLambdaClient:
         """
 
         logger.info(f"Invoking lambda function {function_arn}.")
-        start_time = time.time()
+        start_time = datetime.datetime.now().timestamp()
 
         invoke_response = self.client.invoke(
-            FunctionName=function_arn, InvocationType="RequestResponse", Payload=json.dumps(event)
+            FunctionName=function_arn,
+            InvocationType="RequestResponse",
+            Payload=json.dumps(event),
+            LogType="Tail",
         )
 
-        end_time = time.time()
+        end_time = datetime.datetime.now().timestamp()
         logger.info(f"Lambda function {function_arn} invoked in {end_time - start_time} seconds.")
+
+        # Decode base64 encoded logs
+        logs = base64.b64decode(invoke_response["LogResult"]).decode("utf-8")
+
+        request_id = invoke_response["ResponseMetadata"]["RequestId"]
+
+        # Remove lines that contain RequestId
+        logs = "\n".join([line for line in logs.split("\n") if request_id not in line])
 
         result = {
             "status_code": invoke_response["StatusCode"],
             "response": json.loads(invoke_response["Payload"].read()),
-            "request_id": invoke_response["ResponseMetadata"]["RequestId"],
+            "request_id": request_id,
+            "logs": logs,
         }
         return result, start_time, end_time
 

@@ -4,7 +4,7 @@ from requests import Response
 from app.core.config import settings
 
 
-class WeniClient:
+class ConnectClient:
     base_url: str = ""
     headers: dict[str, str] = {}
 

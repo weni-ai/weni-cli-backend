@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 import requests
 from fastapi import Request, Response, status
 
-from app.clients.weni_client import WeniClient
+from app.clients.connect_client import ConnectClient
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +24,13 @@ class AuthorizationMiddleware:
                 status_code=status.HTTP_400_BAD_REQUEST, content="Missing Authorization or X-Project-Uuid header"
             )
 
-        weni_client = WeniClient(
+        connect_client = ConnectClient(
             auth_header,
             project_uuid,
         )
 
         try:
-            response = weni_client.check_authorization()
+            response = connect_client.check_authorization()
             if response.status_code != status.HTTP_200_OK:
                 return Response(status_code=status.HTTP_401_UNAUTHORIZED)
         except requests.exceptions.RequestException as e:

@@ -1,3 +1,5 @@
+import base64
+import datetime
 import json
 from io import BytesIO
 from typing import Any
@@ -13,9 +15,9 @@ from app.core.config import settings
 # HTTP status codes
 HTTP_STATUS_OK = 200
 
-# Mock time values
-MOCK_START_TIME = 1000.0
-MOCK_END_TIME = 1001.0
+# Mock time values as valid timestamps in datetime format
+MOCK_START_TIME = datetime.datetime(2021, 1, 1, 0, 0, 0)
+MOCK_END_TIME = datetime.datetime(2021, 1, 1, 0, 0, 1)
 
 # Call count expectations
 EXPECTED_CALL_COUNT_TWO = 2
@@ -165,24 +167,30 @@ class TestAWSLambdaClient:
             "StatusCode": HTTP_STATUS_OK,
             "Payload": mock_payload,
             "ResponseMetadata": {"RequestId": MOCK_REQUEST_ID},
+            "LogResult": base64.b64encode(b"test log"),
         }
 
-        # Mock time
-        mock_time = mocker.patch("time.time")
-        mock_time.side_effect = [MOCK_START_TIME, MOCK_END_TIME]  # Start time, end time
+        # Directly patch datetime.now to return our fixed times
+        datetime_mock = mocker.patch("app.clients.aws.lambda_client.datetime")
+        # First call for start_time
+        datetime_mock.datetime.now.side_effect = [MOCK_START_TIME, MOCK_END_TIME]
 
         # Execute
         result, start_time, end_time = lambda_client.invoke_function(function_arn=TEST_FUNCTION_ARN, event=test_event)
 
         # Assert
         mock_lambda_client.invoke.assert_called_once_with(
-            FunctionName=TEST_FUNCTION_ARN, InvocationType="RequestResponse", Payload=json.dumps(test_event)
+            FunctionName=TEST_FUNCTION_ARN,
+            InvocationType="RequestResponse",
+            Payload=json.dumps(test_event),
+            LogType="Tail",
         )
 
         assert result["status_code"] == HTTP_STATUS_OK
         assert result["response"] == {"result": "success"}
-        assert start_time == MOCK_START_TIME
-        assert end_time == MOCK_END_TIME
+        assert result["logs"] == "test log"
+        assert start_time == MOCK_START_TIME.timestamp()
+        assert end_time == MOCK_END_TIME.timestamp()
 
     # Group related tests under a class for better organization
     class TestWaitForFunctionActive:
