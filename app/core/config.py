@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # Nexus settings
     NEXUS_BASE_URL: str = "https://nexus.weni.ai"
 
+    # Connect settings
+    WENI_API_URL: str = "https://api.weni.ai"
+
     # AWS settings
     AGENT_RESOURCE_ROLE_ARN: str = ""
     AWS_REGION: str = "us-east-1"
