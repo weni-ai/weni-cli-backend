@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-import time
+import datetime
 from io import BytesIO
 from typing import Any
 
@@ -82,13 +82,13 @@ class AWSLambdaClient:
         """
 
         logger.info(f"Invoking lambda function {function_arn}.")
-        start_time = time.time()
+        start_time = datetime.datetime.now().timestamp()
 
         invoke_response = self.client.invoke(
             FunctionName=function_arn, InvocationType="RequestResponse", Payload=json.dumps(event)
         )
 
-        end_time = time.time()
+        end_time = datetime.datetime.now().timestamp()
         logger.info(f"Lambda function {function_arn} invoked in {end_time - start_time} seconds.")
 
         result = {
