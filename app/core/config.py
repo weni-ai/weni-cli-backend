@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 
     # AWS settings
     AGENT_RESOURCE_ROLE_ARN: str = ""
+    AGENT_LOG_GROUP: str = ""
     AWS_REGION: str = "us-east-1"
 
     @field_validator("ENVIRONMENT")
