@@ -43,14 +43,18 @@ class AWSLogsClient:
                 )
 
                 if not response["events"]:
-                    logger.info(f"Log group {log_group_name} empty, waiting {retry_delay} seconds...")
+                    logger.info(
+                        f"Log group {log_group_name} empty, for request {request_id}, waiting {retry_delay} seconds..."
+                    )
                     await asyncio.sleep(retry_delay)
                     continue
 
                 return sorted(response["events"], key=lambda x: x["timestamp"])
 
             except self.client.exceptions.ResourceNotFoundException:
-                logger.info(f"Log group {log_group_name} not found, waiting {retry_delay} seconds...")
+                logger.info(
+                    f"Log group {log_group_name} not found, for request {request_id}, waiting {retry_delay} seconds..."
+                )
                 await asyncio.sleep(retry_delay)
                 continue
 

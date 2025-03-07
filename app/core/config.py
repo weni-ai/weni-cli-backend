@@ -74,7 +74,9 @@ class Settings(BaseSettings):
         """Initialize settings with diagnostic info."""
         super().__init__(**kwargs)
 
-        logging.basicConfig(level=self.LOG_LEVEL)
+        logging.basicConfig(
+            format="%(asctime)s %(levelname)-8s %(message)s", level=self.LOG_LEVEL, datefmt="%Y-%m-%d %H:%M:%S"
+        )
         logging.getLogger("python_multipart").setLevel(logging.ERROR)
 
         # Log environment variables
