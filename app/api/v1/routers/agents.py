@@ -1,5 +1,5 @@
 """
-Skill endpoints for handling file uploads and processing.
+Agents endpoints for handling file uploads and processing.
 """
 
 import logging
@@ -14,7 +14,7 @@ from starlette.datastructures import UploadFile
 
 from app.clients.nexus_client import NexusClient
 from app.core.response import CLIResponse, send_response
-from app.services.skill.packager import create_skill_zip
+from app.services.skill.packager import process_skill
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -195,102 +195,6 @@ async def read_skills_content(skills_folders_zips: dict[str, UploadFile]) -> lis
         List of tuples containing (key, file_content)
     """
     return [(key, await file.read()) for key, file in skills_folders_zips.items()]
-
-
-async def process_skill(  # noqa: PLR0913
-    folder_zip: bytes,
-    key: str,
-    project_uuid: str,
-    agent_slug: str,
-    skill_slug: str,
-    definition: dict[str, Any],
-    processed_count: int,
-    total_count: int,
-    toolkit_version: str,
-) -> tuple[CLIResponse, Any | None]:
-    """
-    Process a single skill file.
-
-    Args:
-        folder_zip: The skill folder zip file content
-        key: The skill key (agent:skill)
-        project_uuid: The UUID of the project
-        agent_slug: The slug of the agent
-        skill_slug: The name of the skill
-        definition: The definition data
-        processed_count: The number of skills processed so far
-        total_count: The total number of skills to process
-        toolkit_version: The version of the toolkit
-
-    Returns:
-        Tuple of (response, skill_zip_bytes or None if error)
-    """
-    # Reduce the progress to be always between 0.2 and 0.9
-    progress = 0.2 + (processed_count / total_count) * 0.7
-    logger.info(f"Processing skill {skill_slug} for agent {agent_slug} ({processed_count}/{total_count})")
-
-    try:
-        # Get skill entrypoint
-        agent_info = next((agent for agent in definition["agents"].values() if agent["slug"] == agent_slug), None)
-
-        if not agent_info:
-            raise ValueError(f"Could not find agent {agent_slug} in definition")
-
-        skill_info = next(
-            (skill for skill in agent_info["skills"] if skill["slug"] == skill_slug),
-            None,
-        )
-
-        if not skill_info:
-            raise ValueError(f"Could not find skill {skill_slug} for agent {agent_slug} in definition")
-
-        skill_entrypoint = skill_info["source"]["entrypoint"]
-        skill_entrypoint_module = skill_entrypoint.split(".")[0]
-        skill_entrypoint_class = skill_entrypoint.split(".")[1]
-        logger.debug(f"Skill entrypoint: {skill_entrypoint_module}.{skill_entrypoint_class}")
-
-        # Create zip package
-        logger.info(f"Creating zip package for skill {skill_slug}")
-        skill_zip_bytes = create_skill_zip(
-            folder_zip, key, str(project_uuid), skill_entrypoint_module, skill_entrypoint_class, toolkit_version
-        )
-
-        file_size_kb = len(skill_zip_bytes.getvalue()) / 1024
-        logger.debug(f"Successfully created zip for {key}, size: {file_size_kb:.2f} KB")
-
-        # Prepare success response
-        response: CLIResponse = {
-            "message": f"Skill {skill_slug} processed successfully ({processed_count}/{total_count})",
-            "data": {
-                "skill_name": skill_slug,
-                "agent_name": agent_slug,
-                "size_kb": round(file_size_kb, 2),
-                "processed": processed_count,
-                "total": total_count,
-            },
-            "success": True,
-            "code": "SKILL_PROCESSED",
-            "progress": progress,
-        }
-
-        return response, skill_zip_bytes
-
-    except Exception as e:
-        logger.error(f"Failed to process skill {key}: {str(e)}")
-        error_response: CLIResponse = {
-            "message": f"Failed to process skill {skill_slug}",
-            "data": {
-                "skill_name": skill_slug,
-                "agent_name": agent_slug,
-                "error": str(e),
-                "processed": processed_count,
-                "total": total_count,
-            },
-            "success": False,
-            "code": "SKILL_PROCESSING_ERROR",
-            "progress": progress,
-        }
-        return error_response, None
 
 
 def push_to_nexus(

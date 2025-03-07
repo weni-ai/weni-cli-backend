@@ -2,6 +2,7 @@
 Tests for the skill package packager.
 """
 
+import io
 import os
 import subprocess
 import zipfile
@@ -9,6 +10,8 @@ from collections.abc import Generator
 from io import BytesIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
+from typing import Any, ClassVar
+from uuid import uuid4
 
 import pytest
 from pytest_mock import MockerFixture
@@ -20,6 +23,13 @@ from app.services.skill.packager import (
     install_dependencies,
     install_toolkit,
 )
+
+# Common test constants
+TEST_CONTENT = b"test content"
+TEST_AGENT = "test-agent"
+TEST_SKILL = "test-skill"
+TEST_SKILL_KEY = f"{TEST_AGENT}:{TEST_SKILL}"
+TEST_TOKEN = "Bearer test-token"
 
 
 @pytest.fixture
@@ -383,3 +393,131 @@ class TestCreateSkillZip:
 
         # Verify cleanup was attempted (now includes ignore_errors=True)
         rmtree_mock.assert_called_once_with(temp_dir_path, ignore_errors=True), "Should clean up temp directory"
+
+
+class TestProcessSkill:
+    """Tests for process_skill function."""
+
+    # Common test data
+    folder_zip: ClassVar[bytes] = b"test zip content"
+    key: ClassVar[str] = TEST_SKILL_KEY
+    project_uuid: ClassVar[str] = str(uuid4())
+    agent_name: ClassVar[str] = TEST_AGENT
+    skill_name: ClassVar[str] = TEST_SKILL
+    skill_definition: ClassVar[dict[str, Any]] = {
+        "agents": {
+            TEST_AGENT: {
+                "slug": TEST_AGENT,
+                "skills": [
+                    {
+                        "slug": TEST_SKILL,
+                        "source": {"entrypoint": "main.TestSkill"},
+                    }
+                ],
+            }
+        }
+    }
+    processed_count: ClassVar[int] = 1
+    total_count: ClassVar[int] = 2
+    expected_progress: ClassVar[float] = 0.55  # 1/2 * 0.7 + 0.2
+    toolkit_version: ClassVar[str] = "1.0.0"  # Add default toolkit version
+
+    def test_success(self) -> None:
+        """Test successful processing of a skill."""
+        import asyncio
+
+        from app.services.skill.packager import process_skill
+
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setattr(
+                "app.services.skill.packager.create_skill_zip", lambda *args, **kwargs: io.BytesIO(b"packaged content")
+            )
+
+            response, skill_zip = asyncio.run(
+                process_skill(
+                    self.folder_zip,
+                    self.key,
+                    self.project_uuid,
+                    self.agent_name,
+                    self.skill_name,
+                    self.skill_definition,
+                    self.processed_count,
+                    self.total_count,
+                    self.toolkit_version,  # Add toolkit version parameter
+                )
+            )
+
+        assert response["success"] is True, "Should report success"
+        assert skill_zip is not None, "Should return skill zip"
+        assert response["data"] is not None, "Response should include data"
+        assert response["data"]["skill_name"] == self.skill_name, "Should include skill name"
+        assert response["progress"] == self.expected_progress, f"Progress should be {self.expected_progress}"
+
+    def test_missing_agent_in_definition(self) -> None:
+        """Test handling of missing agent in definition."""
+        import asyncio
+
+        from app.services.skill.packager import process_skill
+
+        # Use a non-existent agent name
+        missing_agent = "non-existent-agent"
+
+        response, skill_zip = asyncio.run(
+            process_skill(
+                self.folder_zip,
+                f"{missing_agent}:{self.skill_name}",
+                self.project_uuid,
+                missing_agent,  # Use the missing agent name
+                self.skill_name,
+                self.skill_definition,  # Definition only contains TEST_AGENT
+                self.processed_count,
+                self.total_count,
+                self.toolkit_version,  # Add toolkit version parameter
+            )
+        )
+
+        assert response["success"] is False, "Should report failure"
+        assert skill_zip is None, "Should not return skill zip"
+        assert response["data"] is not None, "Response should include data"
+        assert "Could not find agent" in response["data"]["error"], "Error should mention missing agent"
+        assert missing_agent in response["data"]["error"], "Error should include the missing agent name"
+
+    @pytest.mark.parametrize(
+        "scenario, key, skill_name, expected_error",
+        [
+            ("missing_skill", "test-agent:missing-skill", "missing-skill", "Could not find skill"),
+            ("exception", TEST_SKILL_KEY, TEST_SKILL, "Zip creation error"),
+        ],
+    )
+    def test_error_scenarios(self, scenario: str, key: str, skill_name: str, expected_error: str) -> None:
+        """Test various error scenarios in skill processing."""
+        import asyncio
+
+        from app.api.v1.routers.agents import process_skill
+
+        with pytest.MonkeyPatch().context() as mp:
+            if scenario == "exception":
+                # Cause an exception
+                mp.setattr(
+                    "app.services.skill.packager.create_skill_zip",
+                    lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("Zip creation error")),
+                )
+
+            response, skill_zip = asyncio.run(
+                process_skill(
+                    self.folder_zip,
+                    key,
+                    self.project_uuid,
+                    self.agent_name,
+                    skill_name,
+                    self.skill_definition,
+                    self.processed_count,
+                    self.total_count,
+                    self.toolkit_version,  # Add toolkit version parameter
+                )
+            )
+
+        assert response["success"] is False, "Should report failure"
+        assert response["data"] is not None, "Response should include data"
+        assert expected_error in response["data"]["error"], f"Should include '{expected_error}' in error message"
+        assert skill_zip is None, "Should not return skill zip"
