@@ -25,6 +25,7 @@ async def configure_agents(
     request: Request,
     project_uuid: Annotated[UUID4, Form()],
     definition: Annotated[Json, Form()],
+    toolkit_version: Annotated[str, Form()],
     authorization: Annotated[str, Header()],
 ) -> StreamingResponse:
     """
@@ -90,6 +91,7 @@ async def configure_agents(
                     definition,
                     processed_count,
                     skill_count,
+                    toolkit_version,
                 )
 
                 # Send response for this skill
@@ -106,7 +108,7 @@ async def configure_agents(
 
             # Send progress update for Nexus upload
             nexus_response: CLIResponse = {
-                "message": "Sending agents to Nexus...",
+                "message": "Updating your agents...",
                 "data": {
                     "project_uuid": str(project_uuid),
                     "skill_count": len(skill_mapping),
@@ -128,7 +130,7 @@ async def configure_agents(
                 yield send_response(typed_error_response, request_id=request_id)
 
                 response_data = typed_error_response.get("data") or {}
-                error_message = str(response_data.get("error", "Unknown error pushing to Nexus"))
+                error_message = str(response_data.get("error", "Unknown error while pushing agents..."))
                 raise Exception(error_message)
 
             # Final message
@@ -204,6 +206,7 @@ async def process_skill(  # noqa: PLR0913
     definition: dict[str, Any],
     processed_count: int,
     total_count: int,
+    toolkit_version: str,
 ) -> tuple[CLIResponse, Any | None]:
     """
     Process a single skill file.
@@ -217,7 +220,7 @@ async def process_skill(  # noqa: PLR0913
         definition: The definition data
         processed_count: The number of skills processed so far
         total_count: The total number of skills to process
-        request_id: The request ID for correlation
+        toolkit_version: The version of the toolkit
 
     Returns:
         Tuple of (response, skill_zip_bytes or None if error)
@@ -249,7 +252,7 @@ async def process_skill(  # noqa: PLR0913
         # Create zip package
         logger.info(f"Creating zip package for skill {skill_slug}")
         skill_zip_bytes = create_skill_zip(
-            folder_zip, key, str(project_uuid), skill_entrypoint_module, skill_entrypoint_class
+            folder_zip, key, str(project_uuid), skill_entrypoint_module, skill_entrypoint_class, toolkit_version
         )
 
         file_size_kb = len(skill_zip_bytes.getvalue()) / 1024
@@ -322,7 +325,7 @@ def push_to_nexus(
         response = nexus_client.push_agents(str(project_uuid), definition, skill_mapping)
 
         if response.status_code != status.HTTP_200_OK:
-            raise Exception(f"Failed to push agents to Nexus: {response.status_code} {response.text}")
+            raise Exception(f"Failed to push agents: {response.status_code} {response.text}")
 
         logger.info(f"Successfully pushed agents to Nexus for project {project_uuid}")
 
@@ -331,7 +334,7 @@ def push_to_nexus(
     except Exception as e:
         logger.error(f"Failed to push agents to Nexus: {str(e)}", exc_info=True)
         nexus_error: CLIResponse = {
-            "message": "Failed to push agents to Nexus",
+            "message": "Failed to push agents",
             "data": {
                 "project_uuid": str(project_uuid),
                 "error": str(e),
