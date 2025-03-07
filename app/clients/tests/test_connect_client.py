@@ -1,4 +1,4 @@
-"""Tests for WeniClient class."""
+"""Tests for ConnectClient class."""
 
 from http import HTTPStatus
 from urllib.parse import urlparse
@@ -8,12 +8,12 @@ import requests
 import requests_mock
 from pytest_mock import MockerFixture
 
-from app.clients.weni_client import WeniClient
+from app.clients.connect_client import ConnectClient
 from app.core.config import settings
 
 
-class TestWeniClient:
-    """Tests for the WeniClient class."""
+class TestConnectClient:
+    """Tests for the ConnectClient class."""
 
     TEST_AUTH_TOKEN = "test-token"
     TEST_PROJECT_UUID = "123e4567-e89b-12d3-a456-426614174000"
@@ -24,9 +24,9 @@ class TestWeniClient:
     }
 
     def test_init(self) -> None:
-        """Test WeniClient initialization."""
+        """Test ConnectClient initialization."""
         # Act
-        client = WeniClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
+        client = ConnectClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
 
         # Assert
         assert client.headers == {"Authorization": self.TEST_AUTH_TOKEN}
@@ -52,7 +52,7 @@ class TestWeniClient:
     ) -> None:
         """Test check_authorization method with different status codes."""
         # Arrange
-        client = WeniClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
+        client = ConnectClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
         expected_url = f"{settings.WENI_API_URL}/v2/projects/{self.TEST_PROJECT_UUID}/authorization"
 
         # Mock the API response
@@ -88,7 +88,7 @@ class TestWeniClient:
     ) -> None:
         """Test check_authorization method when exceptions occur."""
         # Arrange
-        client = WeniClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
+        client = ConnectClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
 
         # Mock the requests.get method to raise the specified exception
         mocker.patch("requests.get", side_effect=exception_class(exception_message))
@@ -98,17 +98,17 @@ class TestWeniClient:
             client.check_authorization()
 
     def test_empty_auth_token(self) -> None:
-        """Test WeniClient with empty auth token."""
+        """Test ConnectClient with empty auth token."""
         # Arrange & Act
-        client = WeniClient("", self.TEST_PROJECT_UUID)
+        client = ConnectClient("", self.TEST_PROJECT_UUID)
 
         # Assert
         assert client.headers == {"Authorization": ""}
 
     def test_empty_project_uuid(self, requests_mock: requests_mock.Mocker) -> None:
-        """Test WeniClient with empty project UUID."""
+        """Test ConnectClient with empty project UUID."""
         # Arrange
-        client = WeniClient(self.TEST_AUTH_TOKEN, "")
+        client = ConnectClient(self.TEST_AUTH_TOKEN, "")
         expected_url = f"{settings.WENI_API_URL}/v2/projects//authorization"
 
         # Mock the API response
