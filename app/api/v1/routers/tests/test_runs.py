@@ -47,7 +47,7 @@ def project_uuid() -> UUID:
 @pytest.fixture(scope="module")
 def auth_header() -> dict[str, str]:
     """Return an authorization header for tests."""
-    return {"Authorization": TEST_TOKEN}
+    return {"Authorization": TEST_TOKEN, "X-Project-Uuid": str(project_uuid)}
 
 
 @pytest.fixture
@@ -208,7 +208,7 @@ class TestRunSkillEndpoint:
         mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
 
     def test_run_skill_success(
-        self, post_run_request_factory: Callable[[], Any], mock_success_dependencies: None
+        self, post_run_request_factory: Callable[[], Any], mock_success_dependencies: None, mock_auth_middleware: None
     ) -> None:
         """Test successful run_skill_test endpoint."""
         # Minimum expected response items
@@ -276,8 +276,8 @@ class TestRunSkillEndpoint:
                     "skill": ("test_skill.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
                 },
                 {},  # Empty headers - no auth
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                None,  # No streaming response for 422
+                status.HTTP_400_BAD_REQUEST,
+                "Missing Authorization or X-Project-Uuid header",
             ),
         ],
     )
@@ -290,6 +290,7 @@ class TestRunSkillEndpoint:
         headers: dict[str, str] | None,
         expected_status: int,
         expected_error_code: str | None,
+        mock_auth_middleware: None,
     ) -> None:
         """Test validation errors for run_skill_test endpoint."""
         # Execute
@@ -298,7 +299,9 @@ class TestRunSkillEndpoint:
         # Assert
         assert response.status_code == expected_status, f"Expected status {expected_status} for {test_id}"
 
-    def test_process_skill_error(self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture) -> None:
+    def test_process_skill_error(
+        self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture, mock_auth_middleware: None
+    ) -> None:
         """Test error handling when process_skill raises an exception."""
         # Setup
         error_message = "Error processing skill"
@@ -335,7 +338,7 @@ class TestRunSkillEndpoint:
         assert error_message in str(error_responses[-1])
 
     def test_lambda_function_creation_failure(
-        self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture
+        self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture, mock_auth_middleware: None
     ) -> None:
         """Test error handling when lambda function creation fails."""
         # Setup - mock process_skill to succeed
@@ -384,7 +387,7 @@ class TestRunSkillEndpoint:
         assert len(error_responses) > 0
 
     def test_lambda_function_activation_failure(
-        self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture
+        self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture, mock_auth_middleware: None
     ) -> None:
         """Test error handling when lambda function activation fails."""
         # Setup - mock process_skill to succeed
@@ -439,7 +442,7 @@ class TestRunSkillEndpoint:
         assert len(error_responses) > 0
 
     def test_lambda_function_invocation_error(
-        self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture
+        self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture, mock_auth_middleware: None
     ) -> None:
         """Test error handling when lambda function invocation fails."""
         # Setup - mock process_skill to succeed
@@ -496,7 +499,9 @@ class TestRunSkillEndpoint:
         error_responses = [r for r in response_data if r.get("success") is False]
         assert len(error_responses) > 0
 
-    def test_clean_up_on_error(self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture) -> None:
+    def test_clean_up_on_error(
+        self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture, mock_auth_middleware: None
+    ) -> None:
         """Test that resources are cleaned up when an error occurs."""
         mocker.patch(
             "app.api.v1.routers.runs.process_skill", new=AsyncMock(side_effect=ValueError("Process skill error"))
@@ -546,6 +551,7 @@ class TestRunSkillEndpoint:
         post_run_request_factory: Callable[[], Any],
         mocker: MockerFixture,
         run_skill_request_data: dict[str, Any],
+        mock_auth_middleware: None,
     ) -> None:
         """Test error handling when agent is not found in definition."""
         # Setup - Create a definition with no agents
@@ -579,7 +585,7 @@ class TestRunSkillEndpoint:
             api_path,
             data=modified_data,
             files=files,
-            headers={"Authorization": TEST_TOKEN},
+            headers={"Authorization": TEST_TOKEN, "X-Project-Uuid": str(uuid4())},
         )
 
         # Assert
@@ -598,6 +604,7 @@ class TestRunSkillEndpoint:
         post_run_request_factory: Callable[[], Any],
         mocker: MockerFixture,
         run_skill_request_data: dict[str, Any],
+        mock_auth_middleware: None,
     ) -> None:
         """Test error handling when skill is not found for agent."""
         # Setup - Create a definition with an agent but no skills
@@ -636,7 +643,7 @@ class TestRunSkillEndpoint:
             api_path,
             data=modified_data,
             files=files,
-            headers={"Authorization": TEST_TOKEN},
+            headers={"Authorization": TEST_TOKEN, "X-Project-Uuid": str(uuid4())},
         )
 
         # Assert
@@ -650,7 +657,9 @@ class TestRunSkillEndpoint:
         assert len(error_responses) > 0
         assert f"Could not find skill {TEST_SKILL_NAME}" in str(error_responses[-1])
 
-    def test_empty_skill_zip_bytes(self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture) -> None:
+    def test_empty_skill_zip_bytes(
+        self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture, mock_auth_middleware: None
+    ) -> None:
         """Test error handling when skill_zip_bytes is empty after processing."""
         # Setup - mock process_skill to return None for skill_zip_bytes
         mock_process_result = {

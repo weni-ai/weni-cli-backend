@@ -48,7 +48,7 @@ def project_uuid() -> UUID:
 @pytest.fixture(scope="module")
 def auth_header() -> dict[str, str]:
     """Create an authorization header."""
-    return {"Authorization": TEST_TOKEN}
+    return {"Authorization": TEST_TOKEN, "X-Project-Uuid": str(project_uuid)}
 
 
 @pytest.fixture
@@ -201,6 +201,7 @@ class TestAgentConfigEndpoint:
         self,
         post_request_factory: Callable[[], Any],
         mock_success_dependencies: None,
+        mock_auth_middleware: None,
     ) -> None:
         """Test successful agent config endpoint."""
         # Execute
@@ -273,8 +274,8 @@ class TestAgentConfigEndpoint:
                     TEST_SKILL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
                 },
                 {},  # Empty headers - no auth
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                "Should require authorization",
+                status.HTTP_400_BAD_REQUEST,
+                "Missing Authorization or X-Project-Uuid header",
                 None,  # No custom setup
             ),
             (
@@ -303,6 +304,7 @@ class TestAgentConfigEndpoint:
         error_msg: str,
         custom_setup: dict[str, Any] | None,
         monkeypatch: pytest.MonkeyPatch,
+        mock_auth_middleware: None,
     ) -> None:
         """Test validation errors for agent config endpoint."""
         # For the process_skill_error case, we need a special setup
@@ -325,7 +327,7 @@ class TestAgentConfigEndpoint:
         assert response.status_code == expected_status, error_msg
 
     def test_push_to_nexus_error_response(
-        self, post_request_factory: Callable[[], Any], mocker: MockerFixture
+        self, post_request_factory: Callable[[], Any], mock_auth_middleware: None, mocker: MockerFixture
     ) -> None:
         """Test handling of error response from push_to_nexus."""
         # Mock successful skill processing
@@ -396,7 +398,7 @@ class TestAgentConfigEndpoint:
         assert "Error pushing to Nexus" in str(error_messages[-1])
 
     def test_final_success_message(
-        self, post_request_factory: Callable[[], Any], mocker: MockerFixture
+        self, post_request_factory: Callable[[], Any], mock_auth_middleware: None, mocker: MockerFixture
     ) -> None:
         """Test final success message in streaming response."""
         # Mock successful skill processing
@@ -455,7 +457,7 @@ class TestAgentConfigEndpoint:
         assert final_message["code"] == "PROCESSING_COMPLETED", "Final message should have code=PROCESSING_COMPLETED"
 
     def test_push_to_nexus_with_no_skills(
-        self, post_request_factory: Callable[[], Any], mocker: MockerFixture
+        self, post_request_factory: Callable[[], Any], mock_auth_middleware: None, mocker: MockerFixture
     ) -> None:
         """Test pushing to Nexus when there are no skills."""
         # Mock extract_skill_files and read_skills_content to return empty results
@@ -496,7 +498,7 @@ class TestAgentConfigEndpoint:
         )
 
     def test_process_skill_failure_stops_processing(
-        self, post_request_factory: Callable[[], Any], mocker: MockerFixture
+        self, post_request_factory: Callable[[], Any], mock_auth_middleware: None, mocker: MockerFixture
     ) -> None:
         """Test that processing stops on skill processing failure."""
         error_message = "Error processing skill"

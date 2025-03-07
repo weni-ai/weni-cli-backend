@@ -1,80 +1,91 @@
-"""
-Tests for health check endpoint.
-"""
-from datetime import UTC, datetime, timezone
-from unittest import mock
+"""Test for health endpoint."""
+
+import json
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
+from pytest_mock import MockerFixture
 
 from app.core.config import settings
 from app.main import app
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def client() -> TestClient:
     """Create a test client for the app."""
     return TestClient(app)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def api_path() -> str:
-    """Get the correct API path for health endpoint."""
+    """Return an API path for health check."""
     return f"{settings.API_PREFIX}/v1/health"
 
 
-def test_health_endpoint_returns_200(client: TestClient, api_path: str) -> None:
-    """Test that the health endpoint returns a 200 status code."""
+def test_health_endpoint_returns_200(client: TestClient, api_path: str, mock_auth_middleware: None) -> None:
+    """Test health endpoint returns 200 OK."""
     response = client.get(api_path)
     assert response.status_code == status.HTTP_200_OK
 
 
-def test_health_endpoint_returns_json(client: TestClient, api_path: str) -> None:
-    """Test that the health endpoint returns JSON data."""
+def test_health_endpoint_returns_json(client: TestClient, api_path: str, mock_auth_middleware: None) -> None:
+    """Test health endpoint returns JSON."""
     response = client.get(api_path)
     assert response.headers["Content-Type"] == "application/json"
+    assert json.loads(response.content)  # Ensure the response is valid JSON
 
 
-def test_health_endpoint_returns_expected_fields(client: TestClient, api_path: str) -> None:
-    """Test that the health endpoint returns the expected fields."""
+def test_health_endpoint_returns_expected_fields(
+    client: TestClient, api_path: str, mock_auth_middleware: None
+) -> None:
+    """Test health endpoint returns expected fields."""
     response = client.get(api_path)
-    data = response.json()
+    data = json.loads(response.content)
     assert "status" in data
     assert "version" in data
     assert "timestamp" in data
 
 
-def test_health_endpoint_status_is_ok(client: TestClient, api_path: str) -> None:
-    """Test that the health endpoint status is 'ok'."""
+def test_health_endpoint_status_is_ok(client: TestClient, api_path: str, mock_auth_middleware: None) -> None:
+    """Test health endpoint status is OK."""
     response = client.get(api_path)
-    data = response.json()
+    data = json.loads(response.content)
     assert data["status"] == "ok"
 
 
-def test_health_endpoint_version_matches_settings(client: TestClient, api_path: str) -> None:
-    """Test that the health endpoint version matches the settings version."""
+def test_health_endpoint_version_matches_settings(
+    client: TestClient, api_path: str, mock_auth_middleware: None
+) -> None:
+    """Test health endpoint version matches settings."""
     response = client.get(api_path)
-    data = response.json()
+    data = json.loads(response.content)
     assert data["version"] == settings.VERSION
 
 
-def test_health_endpoint_timestamp_is_recent_utc(client: TestClient, api_path: str) -> None:
-    """Test that the health endpoint timestamp is a recent UTC datetime."""
-    # Use a mock to fix the current time for testing
-    fixed_datetime = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
+def test_health_endpoint_timestamp_is_recent_utc(
+    client: TestClient, api_path: str, mock_auth_middleware: None, mocker: MockerFixture
+) -> None:
+    """Test health endpoint timestamp is recent and in UTC."""
+    # Create a fixed datetime for testing
+    mock_dt = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
 
-    with mock.patch("app.api.v1.routers.health.datetime") as mock_datetime:
-        # Set up the mock
-        mock_datetime.now.return_value = fixed_datetime
-        mock_datetime.timezone = timezone
+    # Create a class that mocks datetime
+    mock_datetime = mocker.MagicMock()
+    mock_datetime.now.return_value = mock_dt
+    mock_datetime.UTC = UTC  # Keep the original UTC
 
-        # Make the request
-        response = client.get(api_path)
-        data = response.json()
+    # Patch the datetime class in the health router
+    mocker.patch("app.api.v1.routers.health.datetime", mock_datetime)
 
-        # Parse the returned timestamp
-        returned_timestamp = datetime.fromisoformat(data["timestamp"])
+    # Make the request
+    response = client.get(api_path)
+    data = json.loads(response.content)
 
-        # Assert that the returned timestamp is the mocked time
-        assert returned_timestamp == fixed_datetime
+    # Parse timestamp from response
+    timestamp = datetime.fromisoformat(data["timestamp"].replace("Z", "+00:00"))
+
+    # Assert timestamp is our mocked time
+    assert timestamp.tzinfo is not None  # Ensure timestamp has timezone info
+    assert timestamp == mock_dt  # Timestamp should match our mocked time exactly
