@@ -80,7 +80,7 @@ def test_verify_permission_unauthorized(
     )
 
     # Assert
-    assert response.status_code == status.HTTP_200_OK
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
     result = response.json()
     assert result["status"] == "error"
     assert "Unauthorized" in str(result["message"])
@@ -102,7 +102,7 @@ def test_verify_permission_exception(
     )
 
     # Assert
-    assert response.status_code == status.HTTP_200_OK
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
     result = response.json()
     assert result["status"] == "error"
     assert result["message"] == "Connection error"
