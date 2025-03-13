@@ -2,7 +2,7 @@
 Permissions endpoints
 """
 
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Header, status
 from fastapi.responses import JSONResponse
