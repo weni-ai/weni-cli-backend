@@ -5,13 +5,32 @@ Main FastAPI application.
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.v1.middlewares import AuthorizationMiddleware
 from app.api.v1.routes import router as api_v1_router
 from app.core.config import settings
+
+sentry_sdk.init(
+    dsn=settings.SENTRY_DSN,
+    traces_sample_rate=1.0,
+    send_default_pii=True,
+    integrations=[
+        StarletteIntegration(
+            transaction_style="endpoint",
+            failed_request_status_codes={*range(401, 599)},
+        ),
+        FastApiIntegration(
+            transaction_style="endpoint",
+            failed_request_status_codes={*range(401, 599)},
+        ),
+    ],
+)
 
 
 @asynccontextmanager
