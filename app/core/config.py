@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     AGENT_LOG_GROUP: str = ""
     AWS_REGION: str = "us-east-1"
 
+    # Sentry settings
+    SENTRY_DSN: str = ""
+
     @field_validator("ENVIRONMENT")
     @classmethod
     def validate_environment(cls, value: str) -> str:  # pragma: no cover

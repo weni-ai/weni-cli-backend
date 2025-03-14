@@ -17,6 +17,7 @@ python-multipart = "^0.0.20"
 boto3 = "^1.37.3"
 requests = "^2.32.3"
 httpx = "^0.28.1"
+sentry-sdk = {extras = ["fastapi"], version = "^2.22.0"}
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.9.8"
