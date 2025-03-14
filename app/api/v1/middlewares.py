@@ -8,7 +8,7 @@ from app.clients.connect_client import ConnectClient
 
 logger = logging.getLogger(__name__)
 
-NO_AUTH_ENDPOINTS = ["/api/v1/health", "/api/v1/health/"]
+NO_AUTH_ENDPOINTS = ["/api/v1/health", "/api/v1/health/", "/api/v1/permissions/verify"]
 
 
 class AuthorizationMiddleware:

@@ -17,3 +17,9 @@ class RunSkillRequestModel(BaseRequestModel):
     agent_name: str
     skill_credentials: Json
     skill_globals: Json
+
+
+class VerifyPermissionRequestModel(BaseModel):
+    """Verify permission request model."""
+
+    project_uuid: UUID4
