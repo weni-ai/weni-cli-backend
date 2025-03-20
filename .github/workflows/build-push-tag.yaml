@@ -11,7 +11,7 @@ jobs:
   call-workflow:
     uses: weni-ai/actions-workflows/.github/workflows/reusable-workflow.yaml@CLOUD-2298
     with:
-      image_repository: 869898323958.dkr.ecr.us-east-1.amazonaws.com/cli-backend
+      image_repository: cli-backend
       dockerfile: "docker/Dockerfile"
       target_repository: weni-ai/kubernetes-manifests-platform
       target_repository_branch: main
