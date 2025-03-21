@@ -22,6 +22,6 @@ jobs:
       image_latest: "true"
       image_tags: |
         type=ref,event=tag
-        raw=latest-develop
+        type=raw,latest-develop
       debug: "true"
     secrets: inherit
