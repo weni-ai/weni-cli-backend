@@ -17,4 +17,6 @@ jobs:
       target_repository_branch: main
       target_application: cli-backend
       target_patch_file: deployment.json
+      build_args: |
+        AAAAAAAA=test
     secrets: inherit
