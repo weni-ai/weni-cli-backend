@@ -48,9 +48,8 @@ jobs:
       target_patch_file: deployment.json
       build_args: |
         OLD_IMAGE=${{ needs.setup.outputs.image_latest }}
-      image_tag_latest_by_environment: "true"
       image_tags: |
         type=ref,event=tag
         type=raw,${{ needs.setup.outputs.image_latest }}
-      debug: "true"
+      #debug: "true"
     secrets: inherit
