@@ -19,4 +19,6 @@ jobs:
       target_patch_file: deployment.json
       build_args: |
         AAAAAAAA=test
+      image_latest: "true"
+      debug: "true"
     secrets: inherit
