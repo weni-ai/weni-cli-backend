@@ -20,8 +20,9 @@ jobs:
       build_args: |
         AAAAAAAA=test
       image_latest: "true"
-      image_tags: |
-        type=ref,event=tag
-        type=raw,latest-develop
+      image_tag_latest_by_environment: "true"
+      #image_tags: |
+      #  type=ref,event=tag
+      #  type=raw,latest-develop
       debug: "true"
     secrets: inherit
