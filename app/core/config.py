@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # Connect settings
     WENI_API_URL: str = "https://api.weni.ai"
 
+    # CLI settings
+    CLI_MINIMUM_VERSION: str = "0.1.0"
+
     # AWS settings
     AGENT_RESOURCE_ROLE_ARN: str = ""
     AGENT_LOG_GROUP: str = ""
