@@ -70,7 +70,7 @@ class VersionCheckMiddleware:
                     ),
                 )
         except ValueError as e:
-            logger.error(f"Error during version check: {e}")
+            logger.error(f"Error during version check: {e} - cli_version_header: {cli_version_header}")
             return Response(
                 status_code=status.HTTP_400_BAD_REQUEST, content=f"Invalid version format: {cli_version_header}"
             )
