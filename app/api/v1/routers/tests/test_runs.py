@@ -47,7 +47,11 @@ def project_uuid() -> UUID:
 @pytest.fixture(scope="module")
 def auth_header() -> dict[str, str]:
     """Return an authorization header for tests."""
-    return {"Authorization": TEST_TOKEN, "X-Project-Uuid": str(project_uuid)}
+    return {
+        "Authorization": TEST_TOKEN,
+        "X-Project-Uuid": str(project_uuid),
+        "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
+    }
 
 
 @pytest.fixture
@@ -116,7 +120,9 @@ def post_run_request_factory(
         # Merge the data and files for the multipart request
         data = {**run_skill_request_data}
 
-        return client.post(api_path, data=data, files=files, headers=auth_header)
+        headers = {**auth_header, "X-CLI-Version": settings.CLI_MINIMUM_VERSION}
+
+        return client.post(api_path, data=data, files=files, headers=headers)
 
     return make_post_request
 
@@ -266,7 +272,9 @@ class TestRunSkillEndpoint:
                 {
                     "skill": ("test_skill.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
                 },
-                {},  # Empty headers - no auth
+                {
+                    "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
+                },  # Empty headers - no auth
                 status.HTTP_400_BAD_REQUEST,
                 "Missing Authorization or X-Project-Uuid header",
             ),
@@ -548,7 +556,11 @@ class TestRunSkillEndpoint:
             api_path,
             data=modified_data,
             files=files,
-            headers={"Authorization": TEST_TOKEN, "X-Project-Uuid": str(uuid4())},
+            headers={
+                "Authorization": TEST_TOKEN,
+                "X-Project-Uuid": str(uuid4()),
+                "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
+            },
         )
 
         # Assert
@@ -602,7 +614,11 @@ class TestRunSkillEndpoint:
             api_path,
             data=modified_data,
             files=files,
-            headers={"Authorization": TEST_TOKEN, "X-Project-Uuid": str(uuid4())},
+            headers={
+                "Authorization": TEST_TOKEN,
+                "X-Project-Uuid": str(uuid4()),
+                "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
+            },
         )
 
         # Assert

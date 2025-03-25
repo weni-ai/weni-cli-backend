@@ -48,7 +48,11 @@ def project_uuid() -> UUID:
 @pytest.fixture(scope="module")
 def auth_header() -> dict[str, str]:
     """Create an authorization header."""
-    return {"Authorization": TEST_TOKEN, "X-Project-Uuid": str(project_uuid)}
+    return {
+        "Authorization": TEST_TOKEN,
+        "X-Project-Uuid": str(project_uuid),
+        "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
+    }
 
 
 @pytest.fixture
@@ -273,7 +277,9 @@ class TestAgentConfigEndpoint:
                 {
                     TEST_SKILL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
                 },
-                {},  # Empty headers - no auth
+                {
+                    "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
+                },  # Empty headers - no auth
                 status.HTTP_400_BAD_REQUEST,
                 "Missing Authorization or X-Project-Uuid header",
                 None,  # No custom setup

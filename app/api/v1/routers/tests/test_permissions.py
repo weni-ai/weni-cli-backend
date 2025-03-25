@@ -53,7 +53,10 @@ def test_verify_permission_success(
     response = client.post(
         api_path,
         json=valid_request_data,
-        headers={"Authorization": "Bearer test_token"},
+        headers={
+            "Authorization": "Bearer test_token",
+            "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
+        },
     )
 
     # Assert
@@ -76,7 +79,10 @@ def test_verify_permission_unauthorized(
     response = client.post(
         api_path,
         json=valid_request_data,
-        headers={"Authorization": "Bearer invalid_token"},
+        headers={
+            "Authorization": "Bearer invalid_token",
+            "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
+        },
     )
 
     # Assert
@@ -98,7 +104,10 @@ def test_verify_permission_exception(
     response = client.post(
         api_path,
         json=valid_request_data,
-        headers={"Authorization": "Bearer test_token"},
+        headers={
+            "Authorization": "Bearer test_token",
+            "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
+        },
     )
 
     # Assert
@@ -117,7 +126,9 @@ def test_verify_permission_missing_authorization(
     response = client.post(
         api_path,
         json=valid_request_data,
-        # No Authorization header
+        headers={
+            "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
+        },  # No Authorization header
     )
 
     # Assert
@@ -131,7 +142,10 @@ def test_verify_permission_invalid_request_data(client: TestClient, api_path: st
     response = client.post(
         api_path,
         json={"invalid_field": "value"},  # Missing required project_uuid
-        headers={"Authorization": "Bearer test_token"},
+        headers={
+            "Authorization": "Bearer test_token",
+            "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
+        },
     )
 
     # Assert
