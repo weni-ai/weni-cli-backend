@@ -12,7 +12,7 @@ from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api.v1.middlewares import AuthorizationMiddleware
+from app.api.v1.middlewares import AuthorizationMiddleware, VersionCheckMiddleware
 from app.api.v1.routes import router as api_v1_router
 from app.core.config import settings
 
@@ -67,6 +67,9 @@ def create_application() -> FastAPI:
 
     authorization_middleware = AuthorizationMiddleware()
     app.add_middleware(BaseHTTPMiddleware, dispatch=authorization_middleware)
+
+    version_check_middleware = VersionCheckMiddleware()
+    app.add_middleware(BaseHTTPMiddleware, dispatch=version_check_middleware)
 
     # Include routers
     app.include_router(api_v1_router, prefix=settings.API_PREFIX)
