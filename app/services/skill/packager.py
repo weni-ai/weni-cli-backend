@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Package:
     name: str
-    version: str = None
+    version: str | None = None
 
     def to_str(self) -> str:
         if self.version:
