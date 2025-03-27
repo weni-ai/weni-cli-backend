@@ -18,10 +18,11 @@ from pytest_mock import MockerFixture
 
 from app.services.skill.packager import (
     SUBPROCESS_TIMEOUT_SECONDS,
+    Package,
     build_lambda_function_file,
     create_skill_zip,
     install_dependencies,
-    install_toolkit,
+    install_packages,
 )
 
 # Common test constants
@@ -71,7 +72,7 @@ def skill_folder_zip() -> BytesIO:
 
 
 class TestInstallToolkit:
-    """Tests for the install_toolkit function."""
+    """Tests for the install_packages function."""
 
     def test_successful_installation(self, temp_dir: Path, mocker: MockerFixture) -> None:
         """Test successful toolkit installation."""
@@ -81,8 +82,10 @@ class TestInstallToolkit:
         mock_run = mocker.Mock(return_value=mock_process)
         mocker.patch("subprocess.run", mock_run)
 
+        packages = [Package("weni-agents-toolkit", "1.0.0")]
+
         # Call the function
-        install_toolkit(temp_dir, "1.0.0")
+        install_packages(temp_dir, packages)
 
         # Verify subprocess.run was called with correct arguments
         mock_run.assert_called_once()
@@ -102,9 +105,11 @@ class TestInstallToolkit:
         mock_run = mocker.Mock(side_effect=error)
         mocker.patch("subprocess.run", mock_run)
 
+        packages = [Package("weni-agents-toolkit", "1.0.0")]
+
         # Verify function raises ValueError
         with pytest.raises(ValueError) as exc_info:
-            install_toolkit(temp_dir, "1.0.0")
+            install_packages(temp_dir, packages)
         assert "Failed to install toolkit" in str(exc_info.value), "Error message should be descriptive"
         assert "Could not find package" in str(exc_info.value), "Should include the subprocess error"
 
@@ -115,9 +120,11 @@ class TestInstallToolkit:
         mock_run = mocker.Mock(side_effect=error)
         mocker.patch("subprocess.run", mock_run)
 
+        packages = [Package("weni-agents-toolkit", "1.0.0")]
+
         # Verify function raises ValueError
         with pytest.raises(ValueError) as exc_info:
-            install_toolkit(temp_dir, "1.0.0")
+            install_packages(temp_dir, packages)
         assert "Timeout installing toolkit" in str(exc_info.value), "Error should mention timeout"
         assert str(SUBPROCESS_TIMEOUT_SECONDS) in str(exc_info.value), "Should include timeout duration"
 
@@ -209,6 +216,7 @@ class TestBuildLambdaFunctionFile:
         assert "def lambda_handler(event, context):" in result
         assert "result, format = SkillHandler(context)" in result
         assert "dummy_function_response = {'response': action_response, 'messageVersion': '1.0'}" in result
+        assert "sentry_sdk.init(" in result
 
     def test_template_substitution(self) -> None:
         """Test template variable substitution with different values."""
@@ -248,7 +256,7 @@ class TestCreateSkillZip:
         mocker.patch("app.services.skill.packager.validate_requirements_file", return_value=(True, ""))
 
         # Mock toolkit installation
-        mock_install_toolkit = mocker.patch("app.services.skill.packager.install_toolkit")
+        mock_install_packages = mocker.patch("app.services.skill.packager.install_packages")
 
         # Mock dependencies installation
         mock_install_dependencies = mocker.patch("app.services.skill.packager.install_dependencies")
@@ -269,7 +277,7 @@ class TestCreateSkillZip:
         assert isinstance(result, BytesIO), "Should return BytesIO"
 
         # Verify toolkit and dependencies were installed
-        mock_install_toolkit.assert_called_once()
+        mock_install_packages.assert_called_once()
         mock_install_dependencies.assert_called_once()
 
         # Check that the result is a valid zip file
@@ -279,7 +287,7 @@ class TestCreateSkillZip:
     def test_invalid_requirements(self, skill_folder_zip: BytesIO, mocker: MockerFixture) -> None:
         """Test zip creation with invalid requirements."""
         # Mock toolkit installation
-        mocker.patch("app.services.skill.packager.install_toolkit")
+        mocker.patch("app.services.skill.packager.install_packages")
 
         # Mock validation to return failure
         mocker.patch(
@@ -296,7 +304,7 @@ class TestCreateSkillZip:
     def test_installation_error(self, skill_folder_zip: BytesIO, mocker: MockerFixture) -> None:
         """Test zip creation with dependency installation error."""
         # Mock toolkit installation
-        mocker.patch("app.services.skill.packager.install_toolkit")
+        mocker.patch("app.services.skill.packager.install_packages")
 
         # Mock validation to return success
         mocker.patch("app.services.skill.packager.validate_requirements_file", return_value=(True, ""))
@@ -313,9 +321,9 @@ class TestCreateSkillZip:
 
     def test_toolkit_installation_error(self, skill_folder_zip: BytesIO, mocker: MockerFixture) -> None:
         """Test zip creation with toolkit installation error."""
-        # Mock install_toolkit to raise ValueError
+        # Mock install_packages to raise ValueError
         mocker.patch(
-            "app.services.skill.packager.install_toolkit", side_effect=ValueError("Toolkit installation failed")
+            "app.services.skill.packager.install_packages", side_effect=ValueError("Toolkit installation failed")
         )
 
         # Verify function raises ValueError
@@ -342,7 +350,7 @@ class TestCreateSkillZip:
             zip_file.writestr("skill.py", "class SkillHandler: pass")
 
         # Mock toolkit installation
-        mock_install_toolkit = mocker.patch("app.services.skill.packager.install_toolkit")
+        mock_install_packages = mocker.patch("app.services.skill.packager.install_packages")
 
         # Mock dependencies installation - should NOT be called
         mock_install_dependencies = mocker.patch("app.services.skill.packager.install_dependencies")
@@ -365,7 +373,7 @@ class TestCreateSkillZip:
         assert isinstance(result, BytesIO), "Should return BytesIO"
 
         # Verify toolkit was installed but dependencies were not
-        mock_install_toolkit.assert_called_once()
+        mock_install_packages.assert_called_once()
         mock_install_dependencies.assert_not_called()
 
         with zipfile.ZipFile(result) as zip_file:

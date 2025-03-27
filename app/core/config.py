@@ -44,6 +44,7 @@ class Settings(BaseSettings):
 
     # Sentry settings
     SENTRY_DSN: str = ""
+    FUNCTION_SENTRY_DSN: str = ""
 
     @field_validator("ENVIRONMENT")
     @classmethod
