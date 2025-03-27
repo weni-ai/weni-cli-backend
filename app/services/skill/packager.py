@@ -8,10 +8,12 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+from app.core.config import settings
 from app.core.response import CLIResponse
 from app.services.skill.validator import validate_requirements_file
 
@@ -20,10 +22,20 @@ SUBPROCESS_TIMEOUT_SECONDS = 120
 logger = logging.getLogger(__name__)
 
 
-def install_toolkit(package_dir: Path, toolkit_version: str) -> None:
-    """
-    Install the weni-agents-toolkit into a target directory.
-    """
+@dataclass
+class Package:
+    name: str
+    version: str | None = None
+
+    def to_str(self) -> str:
+        if self.version:
+            return f"{self.name}=={self.version}"
+        return self.name
+
+
+def install_packages(package_dir: Path, packages: list[Package]) -> None:
+    packages_list = [package.to_str() for package in packages]
+
     try:
         process = subprocess.run(
             [
@@ -31,7 +43,7 @@ def install_toolkit(package_dir: Path, toolkit_version: str) -> None:
                 "install",
                 "--target",
                 str(package_dir),
-                f"weni-agents-toolkit=={toolkit_version}",
+                *packages_list,
                 "--disable-pip-version-check",
                 "--no-cache-dir",
                 "--isolated",  # Isolated mode
@@ -115,6 +127,8 @@ def build_lambda_function_file(skill_entrypoint_module: str, skill_entrypoint_cl
     # Un-escape the placeholders we want to replace
     template_content = template_content.replace("{{module}}", "{module}").replace("{{class_name}}", "{class_name}")
 
+    template_content = template_content.replace("{{sentry_dsn}}", settings.FUNCTION_SENTRY_DSN)
+
     # Replace placeholders in the template
     return template_content.format(module=skill_entrypoint_module, class_name=skill_entrypoint_class)
 
@@ -170,7 +184,12 @@ def create_skill_zip(  # noqa: PLR0913, PLR0915
         package_dir.mkdir(exist_ok=True)
 
         # Install toolkit in package directory
-        install_toolkit(package_dir, toolkit_version)
+        default_packages = [
+            Package("weni-agents-toolkit", toolkit_version),
+            Package("sentry-sdk", "2.24.1"),
+        ]
+
+        install_packages(package_dir, default_packages)
 
         # Check for requirements.txt
         requirements_path = temp_path / "requirements.txt"
@@ -268,7 +287,10 @@ async def process_skill(  # noqa: PLR0913
 
     try:
         # Get skill entrypoint
-        agent_info = next((agent for agent in definition["agents"].values() if agent["slug"] == agent_slug), None)
+        agent_info = next(
+            (agent for agent in definition["agents"].values() if agent["slug"] == agent_slug),
+            None,
+        )
 
         if not agent_info:
             raise ValueError(f"Could not find agent {agent_slug} in definition")
@@ -289,7 +311,12 @@ async def process_skill(  # noqa: PLR0913
         # Create zip package
         logger.info(f"Creating zip package for skill {skill_slug}")
         skill_zip_bytes = create_skill_zip(
-            folder_zip, key, str(project_uuid), skill_entrypoint_module, skill_entrypoint_class, toolkit_version
+            folder_zip,
+            key,
+            str(project_uuid),
+            skill_entrypoint_module,
+            skill_entrypoint_class,
+            toolkit_version,
         )
 
         file_size_kb = len(skill_zip_bytes.getvalue()) / 1024
