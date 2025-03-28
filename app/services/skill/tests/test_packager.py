@@ -225,7 +225,7 @@ class TestBuildLambdaFunctionFile:
         assert "from skill.custom_module import CustomClass" in result
         assert "result, format = CustomClass(context)" in result
         # Ensure other parts of the template are intact
-        assert "json.loads(session_attributes.get('credentials'))" in result
+        assert "load_value(session_attributes.get('credentials'))" in result
         assert "promptSessionAttributes" in result
 
     def test_template_not_found(self, mocker: MockerFixture) -> None:
