@@ -13,30 +13,33 @@ sentry_sdk.init(
     traces_sample_rate=1.0,
 )
 
+def load_value(data):
+    value = {}
+
+    try:
+        value = json.loads(data)
+    except:
+        value = {}
+
+    return value
+
 
 def lambda_handler(event, context):
     actionGroup = event.get('actionGroup')
     function = event.get('function')
     parameters = event.get('parameters', [])
     session_attributes = event.get('sessionAttributes')
+    prompt_session_attributes = event.get('promptSessionAttributes')
 
-    credentials = {}
-    try:
-        credentials = json.loads(session_attributes.get('credentials'))
-    except:
-        credentials = {}
-
-    globals = {}
-    try:
-        globals = json.loads(session_attributes.get('globals'))
-    except:
-        globals = {}
+    credentials = load_value(session_attributes.get('credentials'))
+    globals = load_value(session_attributes.get('globals'))
+    contact = load_value(prompt_session_attributes.get('contact'))
 
     parameters_map = {}
     for param in parameters:
         parameters_map[param["name"]] = param["value"]
-            
-    context: Context = Context(credentials=credentials, parameters=parameters_map, globals=globals)
+
+    context: Context = Context(credentials=credentials, parameters=parameters_map, globals=globals, contact=contact)
 
     try:
         result, format = {class_name}(context)
