@@ -1,5 +1,5 @@
 """
-Skill runs endpoints for handling file uploads and processing.
+Tool runs endpoints for handling file uploads and processing.
 """
 
 import json
@@ -12,19 +12,19 @@ from fastapi import APIRouter, Form, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from starlette.datastructures import UploadFile
 
-from app.api.v1.models.requests import RunSkillRequestModel
+from app.api.v1.models.requests import RunToolRequestModel
 from app.clients.aws import AWSLambdaClient
 from app.core.response import CLIResponse, send_response
-from app.services.skill.packager import process_skill
+from app.services.tool.packager import process_tool
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 @router.post("")
-async def run_skill_test(  # noqa: PLR0915
+async def run_tool_test(  # noqa: PLR0915
     request: Request,
-    data: Annotated[RunSkillRequestModel, Form()],
+    data: Annotated[RunToolRequestModel, Form()],
     authorization: Annotated[str, Header()],
 ) -> StreamingResponse:
     request_id = str(uuid4())
@@ -34,16 +34,16 @@ async def run_skill_test(  # noqa: PLR0915
     # Access the form data with files
     form = await request.form()
 
-    # Extract and process skill files
-    skill_folder_zip = form.get("skill")
+    # Extract and process tool files
+    tool_folder_zip = form.get("tool")
 
-    if not skill_folder_zip or not isinstance(skill_folder_zip, UploadFile):
-        raise HTTPException(status_code=400, detail="Skill folder zip is required")
+    if not tool_folder_zip or not isinstance(tool_folder_zip, UploadFile):
+        raise HTTPException(status_code=400, detail="Tool folder zip is required")
 
-    folder_zip = await skill_folder_zip.read()
+    folder_zip = await tool_folder_zip.read()
 
-    logger.info(f"Found skill folder to process for project {data.project_uuid}")
-    logger.debug(f"Skill folder zip: {skill_folder_zip}")
+    logger.info(f"Found tool folder to process for project {data.project_uuid}")
+    logger.debug(f"Tool folder zip: {tool_folder_zip}")
 
     function_name = f"cli-{str(uuid4())}"
     lambda_client = AWSLambdaClient()
@@ -59,9 +59,9 @@ async def run_skill_test(  # noqa: PLR0915
                 "code": "PROCESSING_STARTED",
             }
             yield send_response(initial_data, request_id=request_id)
-            logger.info(f"Starting test run for skill {data.skill_name} by {data.agent_name}")
+            logger.info(f"Starting test run for tool {data.tool_name} by {data.agent_name}")
 
-            # Get skill entrypoint
+            # Get tool entrypoint
             agent_info = next(
                 (agent for agent in data.definition["agents"].values() if agent.get("name") == data.agent_name),
                 None,
@@ -72,34 +72,34 @@ async def run_skill_test(  # noqa: PLR0915
 
             logger.debug(f"Agent info: {agent_info}")
 
-            skill_info = next(
-                (skill for skill in agent_info["skills"] if skill["name"] == data.skill_name),
+            tool_info = next(
+                (tool for tool in agent_info["tools"] if tool["name"] == data.tool_name),
                 None,
             )
 
-            if not skill_info:
-                raise ValueError(f"Could not find skill {data.skill_name} for agent {data.agent_name} in definition")
+            if not tool_info:
+                raise ValueError(f"Could not find tool {data.tool_name} for agent {data.agent_name} in definition")
 
-            logger.debug(f"Skill info: {skill_info}")
+            logger.debug(f"Tool info: {tool_info}")
 
-            # Process the skill folder zip
-            response, skill_zip_bytes = await process_skill(
+            # Process the tool folder zip
+            response, tool_zip_bytes = await process_tool(
                 folder_zip,
-                f"{agent_info.get('slug')}:{skill_info.get('slug')}",
+                f"{agent_info.get('slug')}:{tool_info.get('slug')}",
                 str(data.project_uuid),
                 agent_info.get("slug"),
-                skill_info.get("slug"),
+                tool_info.get("slug"),
                 data.definition,
                 1,
                 1,
                 data.toolkit_version,
             )
 
-            # Send response for this skill
+            # Send response for this tool
             yield send_response(response, request_id=request_id)
 
-            if not skill_zip_bytes:
-                raise ValueError("Failed to process skill, aborting test run")
+            if not tool_zip_bytes:
+                raise ValueError("Failed to process tool, aborting test run")
 
             response = {
                 "message": "Creating lambda function",
@@ -116,8 +116,8 @@ async def run_skill_test(  # noqa: PLR0915
             lambda_function = lambda_client.create_function(
                 function_name=function_name,
                 handler="lambda_function.lambda_handler",
-                code=skill_zip_bytes,
-                description=f"CLI run for skill {data.skill_name} by {data.agent_name}. Project: {data.project_uuid}",
+                code=tool_zip_bytes,
+                description=f"CLI run for tool {data.tool_name} by {data.agent_name}. Project: {data.project_uuid}",
             )
 
             if not lambda_function.function_arn or not lambda_function.function_name:
@@ -140,7 +140,7 @@ async def run_skill_test(  # noqa: PLR0915
             yield send_response(response, request_id=request_id)
 
             for test_case, test_data in data.test_definition.get("tests", {}).items():
-                logger.info(f"Running test case {test_case} for skill {data.skill_name} by {data.agent_name}")
+                logger.info(f"Running test case {test_case} for tool {data.tool_name} by {data.agent_name}")
 
                 response = {
                     "message": f"Running test case {test_case}",
@@ -164,8 +164,8 @@ async def run_skill_test(  # noqa: PLR0915
                     "function": lambda_function.function_name,
                     "parameters": parameters,
                     "sessionAttributes": {
-                        "credentials": json.dumps(test_data.get("credentials", data.skill_credentials)),
-                        "globals": json.dumps(test_data.get("globals", data.skill_globals)),
+                        "credentials": json.dumps(test_data.get("credentials", data.tool_credentials)),
+                        "globals": json.dumps(test_data.get("globals", data.tool_globals)),
                     },
                 }
 

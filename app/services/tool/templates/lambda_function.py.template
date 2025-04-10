@@ -4,7 +4,7 @@ import sentry_sdk
 from sentry_sdk.integrations.aws_lambda import AwsLambdaIntegration
 
 from weni.context import Context
-from skill.{module} import {class_name}
+from tool.{module} import {class_name}
 
 
 sentry_sdk.init(

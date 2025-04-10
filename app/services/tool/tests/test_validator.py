@@ -1,5 +1,5 @@
 """
-Tests for the skill package validator.
+Tests for the tool package validator.
 """
 
 import os
@@ -10,7 +10,7 @@ from tempfile import NamedTemporaryFile
 import pytest
 from pytest_mock import MockerFixture
 
-from app.services.skill.validator import (
+from app.services.tool.validator import (
     DANGEROUS_PATTERNS,
     MAX_FILE_SIZE_MB,
     MAX_REQUIREMENTS_COUNT,
@@ -232,7 +232,7 @@ class TestValidateRequirementsFile:
 
         # Mock _check_file_size to return a failure
         mocker.patch(
-            "app.services.skill.validator._check_file_size", return_value=(False, "File too large mock message")
+            "app.services.tool.validator._check_file_size", return_value=(False, "File too large mock message")
         )
 
         result, message = validate_requirements_file(str(temp_requirements_file))
@@ -247,7 +247,7 @@ class TestValidateRequirementsFile:
 
         # Mock _check_requirements_count to return a failure
         mocker.patch(
-            "app.services.skill.validator._check_requirements_count",
+            "app.services.tool.validator._check_requirements_count",
             return_value=(False, "Too many requirements mock message"),
         )
 
