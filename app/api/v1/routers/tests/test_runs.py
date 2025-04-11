@@ -19,6 +19,8 @@ from app.tests.utils import AsyncMock
 TEST_CONTENT = b"test content"
 TEST_AGENT_NAME = "test-agent"
 TEST_TOOL_NAME = "test-tool"
+TEST_TOOL_KEY = "test_tool"
+TEST_AGENT_KEY = "test_agent"
 TEST_TOKEN = "Bearer test-token"
 TEST_FUNCTION_NAME = "test-function-name"
 TEST_FUNCTION_ARN = "arn:aws:lambda:us-east-1:123456789012:function:test-function-name"
@@ -62,6 +64,7 @@ def run_tool_request_data() -> dict[str, Any]:
         "slug": "test-agent-slug",
         "tools": [
             {
+                "key": TEST_TOOL_KEY,
                 "name": TEST_TOOL_NAME,
                 "slug": "test-tool-slug",
             }
@@ -77,10 +80,10 @@ def run_tool_request_data() -> dict[str, Any]:
 
     return {
         "project_uuid": str(uuid4()),
-        "definition": json.dumps({"agents": {"test-agent-id": agent_definition}}),
+        "definition": json.dumps({"agents": {TEST_AGENT_KEY: agent_definition}}),
         "test_definition": json.dumps(test_definition),
-        "tool_name": TEST_TOOL_NAME,
-        "agent_name": TEST_AGENT_NAME,
+        "tool_key": TEST_TOOL_KEY,
+        "agent_key": TEST_AGENT_KEY,
         "tool_credentials": json.dumps(
             {
                 "credential-test-key": "test-value",
@@ -171,7 +174,7 @@ class TestRunToolEndpoint:
         mock_process_result = {
             "message": "Tool processed successfully",
             "data": {
-                "tool_name": TEST_TOOL_NAME,
+                "tool_key": TEST_TOOL_KEY,
             },
             "success": True,
             "code": "TOOL_PROCESSED",
@@ -246,8 +249,8 @@ class TestRunToolEndpoint:
                     "project_uuid": str(uuid4()),
                     "definition": json.dumps({"agents": {}}),
                     "test_definition": json.dumps({"tests": {}}),
-                    "tool_name": TEST_TOOL_NAME,
-                    "agent_name": TEST_AGENT_NAME,
+                    "tool_key": TEST_TOOL_KEY,
+                    "agent_key": TEST_AGENT_KEY,
                     "tool_credentials": json.dumps({}),
                     "tool_globals": json.dumps({}),
                     "toolkit_version": "1.0.0",
@@ -263,8 +266,8 @@ class TestRunToolEndpoint:
                     "project_uuid": str(uuid4()),
                     "definition": json.dumps({"agents": {}}),
                     "test_definition": json.dumps({"tests": {}}),
-                    "tool_name": TEST_TOOL_NAME,
-                    "agent_name": TEST_AGENT_NAME,
+                    "tool_key": TEST_TOOL_KEY,
+                    "agent_key": TEST_AGENT_KEY,
                     "tool_credentials": json.dumps({}),
                     "tool_globals": json.dumps({}),
                     "toolkit_version": "1.0.0",
@@ -340,7 +343,7 @@ class TestRunToolEndpoint:
         mock_process_result = {
             "message": "Tool processed successfully",
             "data": {
-                "tool_name": TEST_TOOL_NAME,
+                "tool_key": TEST_TOOL_KEY,
             },
             "success": True,
             "code": "TOOL_PROCESSED",
@@ -384,7 +387,7 @@ class TestRunToolEndpoint:
         mock_process_result = {
             "message": "Tool processed successfully",
             "data": {
-                "tool_name": TEST_TOOL_NAME,
+                "tool_key": TEST_TOOL_KEY,
             },
             "success": True,
             "code": "TOOL_PROCESSED",
@@ -434,7 +437,7 @@ class TestRunToolEndpoint:
         mock_process_result = {
             "message": "Tool processed successfully",
             "data": {
-                "tool_name": TEST_TOOL_NAME,
+                "tool_key": TEST_TOOL_KEY,
             },
             "success": True,
             "code": "TOOL_PROCESSED",
@@ -572,7 +575,7 @@ class TestRunToolEndpoint:
         # Check for error message
         error_responses = [r for r in response_data if r.get("success") is False]
         assert len(error_responses) > 0
-        assert f"Could not find agent {TEST_AGENT_NAME}" in str(error_responses[-1])
+        assert f"Could not find agent {TEST_AGENT_KEY}" in str(error_responses[-1])
 
     def test_tool_not_found_for_agent(
         self,
@@ -588,7 +591,7 @@ class TestRunToolEndpoint:
             "slug": "test-agent-slug",
             "tools": [],  # Empty tools list
         }
-        definition = {"agents": {"test-agent-id": agent_without_tools}}
+        definition = {"agents": {TEST_AGENT_KEY: agent_without_tools}}
 
         # Setup mocks
         mock_lambda_client = mocker.MagicMock()
@@ -630,7 +633,7 @@ class TestRunToolEndpoint:
         # Check for error message
         error_responses = [r for r in response_data if r.get("success") is False]
         assert len(error_responses) > 0
-        assert f"Could not find tool {TEST_TOOL_NAME}" in str(error_responses[-1])
+        assert f"Could not find tool {TEST_TOOL_KEY}" in str(error_responses[-1])
 
     def test_empty_tool_zip_bytes(
         self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture, mock_auth_middleware: None
@@ -640,7 +643,7 @@ class TestRunToolEndpoint:
         mock_process_result = {
             "message": "Tool processed successfully",
             "data": {
-                "tool_name": TEST_TOOL_NAME,
+                "tool_key": TEST_TOOL_KEY,
             },
             "success": True,
             "code": "TOOL_PROCESSED",

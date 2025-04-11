@@ -59,36 +59,33 @@ async def run_tool_test(  # noqa: PLR0915
                 "code": "PROCESSING_STARTED",
             }
             yield send_response(initial_data, request_id=request_id)
-            logger.info(f"Starting test run for tool {data.tool_name} by {data.agent_name}")
+            logger.info(f"Starting test run for tool {data.tool_key} by {data.agent_key}")
 
             # Get tool entrypoint
-            agent_info = next(
-                (agent for agent in data.definition["agents"].values() if agent.get("name") == data.agent_name),
-                None,
-            )
+            agent_info = data.definition["agents"].get(data.agent_key)
 
             if not agent_info:
-                raise ValueError(f"Could not find agent {data.agent_name} in definition")
+                raise ValueError(f"Could not find agent {data.agent_key} in definition")
 
             logger.debug(f"Agent info: {agent_info}")
 
             tool_info = next(
-                (tool for tool in agent_info["tools"] if tool["name"] == data.tool_name),
+                (tool for tool in agent_info["tools"] if tool["key"] == data.tool_key),
                 None,
             )
 
             if not tool_info:
-                raise ValueError(f"Could not find tool {data.tool_name} for agent {data.agent_name} in definition")
+                raise ValueError(f"Could not find tool {data.tool_key} for agent {data.agent_key} in definition")
 
             logger.debug(f"Tool info: {tool_info}")
 
             # Process the tool folder zip
             response, tool_zip_bytes = await process_tool(
                 folder_zip,
-                f"{agent_info.get('slug')}:{tool_info.get('slug')}",
+                f"{data.agent_key}:{data.tool_key}",
                 str(data.project_uuid),
-                agent_info.get("slug"),
-                tool_info.get("slug"),
+                data.agent_key,
+                data.tool_key,
                 data.definition,
                 1,
                 1,
@@ -117,7 +114,7 @@ async def run_tool_test(  # noqa: PLR0915
                 function_name=function_name,
                 handler="lambda_function.lambda_handler",
                 code=tool_zip_bytes,
-                description=f"CLI run for tool {data.tool_name} by {data.agent_name}. Project: {data.project_uuid}",
+                description=f"CLI run for tool {data.tool_key} by {data.agent_key}. Project: {data.project_uuid}",
             )
 
             if not lambda_function.function_arn or not lambda_function.function_name:
@@ -140,7 +137,7 @@ async def run_tool_test(  # noqa: PLR0915
             yield send_response(response, request_id=request_id)
 
             for test_case, test_data in data.test_definition.get("tests", {}).items():
-                logger.info(f"Running test case {test_case} for tool {data.tool_name} by {data.agent_name}")
+                logger.info(f"Running test case {test_case} for tool {data.tool_key} by {data.agent_key}")
 
                 response = {
                     "message": f"Running test case {test_case}",
@@ -159,7 +156,7 @@ async def run_tool_test(  # noqa: PLR0915
                     parameters.append({"name": key, "value": value})
 
                 test_event = {
-                    "agent_name": data.agent_name,
+                    "agent_key": data.agent_key,
                     "action_group": lambda_function.function_name,
                     "function": lambda_function.function_name,
                     "parameters": parameters,

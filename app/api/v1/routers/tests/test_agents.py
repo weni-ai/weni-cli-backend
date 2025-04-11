@@ -22,7 +22,9 @@ from app.tests.utils import AsyncMock
 TEST_CONTENT = b"test content"
 TEST_AGENT = "test-agent"
 TEST_TOOL = "test-tool"
-TEST_TOOL_KEY = f"{TEST_AGENT}:{TEST_TOOL}"
+TEST_TOOL_KEY = "test_tool"
+TEST_AGENT_KEY = "test_agent"
+TEST_FULL_TOOL_KEY = f"{TEST_AGENT_KEY}:{TEST_TOOL_KEY}"
 TEST_TOKEN = "Bearer test-token"
 
 
@@ -60,12 +62,13 @@ def agent_definition() -> dict[str, Any]:
     """Create a standard agent definition for testing."""
     return {
         "agents": {
-            TEST_AGENT: {
+            TEST_AGENT_KEY: {
                 "name": "Test Agent",
                 "slug": TEST_AGENT,
                 "description": "A test agent",
                 "tools": [
                     {
+                        "key": TEST_TOOL_KEY,
                         "slug": TEST_TOOL,
                         "name": "Test Tool",
                         "description": "A test tool",
@@ -96,7 +99,7 @@ def post_request_factory(
                 "toolkit_version": "1.0.0",  # Add default toolkit version for tests
             },
             files={
-                TEST_TOOL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
+                TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
             },
             headers=auth_header,
         )
@@ -160,17 +163,17 @@ class TestAgentConfigEndpoint:
         )
         monkeypatch.setattr(
             "app.api.v1.routers.agents.extract_tool_files",
-            AsyncMock(return_value={TEST_TOOL_KEY: mock_upload_file}),
+            AsyncMock(return_value={TEST_FULL_TOOL_KEY: mock_upload_file}),
         )
         monkeypatch.setattr(
             "app.api.v1.routers.agents.read_tools_content",
-            AsyncMock(return_value=[(TEST_TOOL_KEY, TEST_CONTENT)]),
+            AsyncMock(return_value=[(TEST_FULL_TOOL_KEY, TEST_CONTENT)]),
         )
         process_response = {
             "message": "Tool processed successfully",
             "data": {
-                "tool_name": TEST_TOOL,
-                "agent_name": TEST_AGENT,
+                "tool_key": TEST_TOOL_KEY,
+                "agent_key": TEST_AGENT_KEY,
                 "size_kb": 1.0,
                 "progress": 100,
             },
@@ -231,7 +234,7 @@ class TestAgentConfigEndpoint:
                     "toolkit_version": "1.0.0",  # Add toolkit_version to avoid failing on that parameter
                 },
                 {
-                    TEST_TOOL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
+                    TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
                 },
                 None,  # Use default auth header
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -245,7 +248,7 @@ class TestAgentConfigEndpoint:
                     "definition": json.dumps({"agents": {}}),
                 },
                 {
-                    TEST_TOOL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
+                    TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
                 },
                 None,  # Use default auth header
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -260,7 +263,7 @@ class TestAgentConfigEndpoint:
                     "toolkit_version": "1.0.0",  # Add toolkit_version to avoid failing on that parameter
                 },
                 {
-                    TEST_TOOL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
+                    TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
                 },
                 None,  # Use default auth header
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -275,7 +278,7 @@ class TestAgentConfigEndpoint:
                     "toolkit_version": "1.0.0",  # Add toolkit_version to avoid failing on that parameter
                 },
                 {
-                    TEST_TOOL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
+                    TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
                 },
                 {
                     "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
@@ -340,8 +343,8 @@ class TestAgentConfigEndpoint:
         process_response = {
             "message": "Tool processed successfully",
             "data": {
-                "tool_name": TEST_TOOL,
-                "agent_name": TEST_AGENT,
+                "tool_key": TEST_TOOL_KEY,
+                "agent_key": TEST_AGENT_KEY,
                 "size_kb": 1.0,
                 "progress": 100,
             },
@@ -364,11 +367,11 @@ class TestAgentConfigEndpoint:
         # Mock extract_tool_files and read_tools_content to return test data
         mocker.patch(
             "app.api.v1.routers.agents.extract_tool_files",
-            new=AsyncMock(return_value={TEST_TOOL_KEY: mocker.Mock()}),
+            new=AsyncMock(return_value={TEST_FULL_TOOL_KEY: mocker.Mock()}),
         )
         mocker.patch(
             "app.api.v1.routers.agents.read_tools_content",
-            new=AsyncMock(return_value=[(TEST_TOOL_KEY, TEST_CONTENT)]),
+            new=AsyncMock(return_value=[(TEST_FULL_TOOL_KEY, TEST_CONTENT)]),
         )
 
         # Create a nexus error response
@@ -411,8 +414,8 @@ class TestAgentConfigEndpoint:
         process_response = {
             "message": "Tool processed successfully",
             "data": {
-                "tool_name": TEST_TOOL,
-                "agent_name": TEST_AGENT,
+                "tool_key": TEST_TOOL_KEY,
+                "agent_key": TEST_AGENT_KEY,
                 "size_kb": 1.0,
                 "progress": 100,
             },
@@ -435,11 +438,11 @@ class TestAgentConfigEndpoint:
         # Mock extract_tool_files and read_tools_content to return test data
         mocker.patch(
             "app.api.v1.routers.agents.extract_tool_files",
-            new=AsyncMock(return_value={TEST_TOOL_KEY: mocker.Mock()}),
+            new=AsyncMock(return_value={TEST_FULL_TOOL_KEY: mocker.Mock()}),
         )
         mocker.patch(
             "app.api.v1.routers.agents.read_tools_content",
-            new=AsyncMock(return_value=[(TEST_TOOL_KEY, TEST_CONTENT)]),
+            new=AsyncMock(return_value=[(TEST_FULL_TOOL_KEY, TEST_CONTENT)]),
         )
 
         # Mock push_to_nexus to succeed
@@ -520,11 +523,11 @@ class TestAgentConfigEndpoint:
         # Setup mocks to simulate tool processing failure using mocker
         mocker.patch(
             "app.api.v1.routers.agents.extract_tool_files",
-            new=AsyncMock(return_value={TEST_TOOL_KEY: mocker.Mock()}),
+            new=AsyncMock(return_value={TEST_FULL_TOOL_KEY: mocker.Mock()}),
         )
         mocker.patch(
             "app.api.v1.routers.agents.read_tools_content",
-            new=AsyncMock(return_value=[(TEST_TOOL_KEY, TEST_CONTENT)]),
+            new=AsyncMock(return_value=[(TEST_FULL_TOOL_KEY, TEST_CONTENT)]),
         )
         mocker.patch("app.services.tool.packager.process_tool", new=AsyncMock(return_value=(error_response, None)))
 
@@ -562,13 +565,13 @@ class TestHelperFunctions:
         mock_form = {
             "project_uuid": "test-uuid",  # Not a file
             "definition": "{}",  # Not a file
-            TEST_TOOL_KEY: mock_file,  # Valid
+            TEST_FULL_TOOL_KEY: mock_file,  # Valid
             "invalid-key": mock_file,  # Invalid (no colon)
         }
 
         result = asyncio.run(extract_tool_files(mock_form))
         assert len(result) == 1, "Should extract one file"
-        assert TEST_TOOL_KEY in result, "Should extract valid file"
+        assert TEST_FULL_TOOL_KEY in result, "Should extract valid file"
         assert "invalid-key" not in result, "Should ignore invalid keys"
 
     def test_read_tools_content(self) -> None:
@@ -596,7 +599,7 @@ class TestPushToNexus:
     # Common test data
     project_uuid: ClassVar[str] = str(uuid4())
     definition: ClassVar[dict[str, Any]] = {"agents": {TEST_AGENT: {"tools": []}}}
-    tool_mapping: ClassVar[dict[str, Any]] = {TEST_TOOL_KEY: io.BytesIO(b"tool content")}
+    tool_mapping: ClassVar[dict[str, Any]] = {TEST_FULL_TOOL_KEY: io.BytesIO(b"tool content")}
     request_id: ClassVar[str] = str(uuid4())
     authorization: ClassVar[str] = TEST_TOKEN
 
