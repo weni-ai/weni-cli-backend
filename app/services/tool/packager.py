@@ -257,8 +257,8 @@ async def process_tool(  # noqa: PLR0913
     folder_zip: bytes,
     key: str,
     project_uuid: str,
-    agent_slug: str,
-    tool_slug: str,
+    agent_key: str,
+    tool_key: str,
     definition: dict[str, Any],
     processed_count: int,
     total_count: int,
@@ -271,8 +271,8 @@ async def process_tool(  # noqa: PLR0913
         folder_zip: The tool folder zip file content
         key: The tool key (agent:tool)
         project_uuid: The UUID of the project
-        agent_slug: The slug of the agent
-        tool_slug: The name of the tool
+        agent_key: The key of the agent
+        tool_key: The key of the tool
         definition: The definition data
         processed_count: The number of tools processed so far
         total_count: The total number of tools to process
@@ -283,25 +283,21 @@ async def process_tool(  # noqa: PLR0913
     """
     # Reduce the progress to be always between 0.2 and 0.9
     progress = 0.2 + (processed_count / total_count) * 0.7
-    logger.info(f"Processing tool {tool_slug} for agent {agent_slug} ({processed_count}/{total_count})")
+    logger.info(f"Processing tool {tool_key} for agent {agent_key} ({processed_count}/{total_count})")
 
     try:
         # Get tool entrypoint
-        agent_info = next(
-            (agent for agent in definition["agents"].values() if agent["slug"] == agent_slug),
-            None,
-        )
-
+        agent_info = definition["agents"].get(agent_key)
         if not agent_info:
-            raise ValueError(f"Could not find agent {agent_slug} in definition")
+            raise ValueError(f"Could not find agent {agent_key} in definition")
 
         tool_info = next(
-            (tool for tool in agent_info["tools"] if tool["slug"] == tool_slug),
+            (tool for tool in agent_info["tools"] if tool["key"] == tool_key),
             None,
         )
 
         if not tool_info:
-            raise ValueError(f"Could not find tool {tool_slug} for agent {agent_slug} in definition")
+            raise ValueError(f"Could not find tool {tool_key} for agent {agent_key} in definition")
 
         tool_entrypoint = tool_info["source"]["entrypoint"]
         tool_entrypoint_module = tool_entrypoint.split(".")[0]
@@ -309,7 +305,7 @@ async def process_tool(  # noqa: PLR0913
         logger.debug(f"Tool entrypoint: {tool_entrypoint_module}.{tool_entrypoint_class}")
 
         # Create zip package
-        logger.info(f"Creating zip package for tool {tool_slug}")
+        logger.info(f"Creating zip package for tool {tool_key}")
         tool_zip_bytes = create_tool_zip(
             folder_zip,
             key,
@@ -324,10 +320,10 @@ async def process_tool(  # noqa: PLR0913
 
         # Prepare success response
         response: CLIResponse = {
-            "message": f"Tool {tool_slug} processed successfully ({processed_count}/{total_count})",
+            "message": f"Tool {tool_key} processed successfully ({processed_count}/{total_count})",
             "data": {
-                "tool_name": tool_slug,
-                "agent_name": agent_slug,
+                "tool_key": tool_key,
+                "agent_key": agent_key,
                 "size_kb": round(file_size_kb, 2),
                 "processed": processed_count,
                 "total": total_count,
@@ -344,8 +340,8 @@ async def process_tool(  # noqa: PLR0913
         error_response: CLIResponse = {
             "message": f"Failed to process tool {key}",
             "data": {
-                "tool_name": tool_slug,
-                "agent_name": agent_slug,
+                "tool_key": tool_key,
+                "agent_key": agent_key,
                 "error": str(e),
                 "processed": processed_count,
                 "total": total_count,

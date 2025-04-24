@@ -76,7 +76,7 @@ async def configure_agents(
 
             # Process each tool file
             for key, folder_zip in tools_folders_zips_entries:
-                agent_slug, tool_slug = key.split(":")
+                agent_key, tool_key = key.split(":")
                 processed_count += 1
 
                 # Process the tool
@@ -84,8 +84,8 @@ async def configure_agents(
                     folder_zip,
                     key,
                     str(data.project_uuid),
-                    agent_slug,
-                    tool_slug,
+                    agent_key,
+                    tool_key,
                     data.definition,
                     processed_count,
                     tool_count,

@@ -29,7 +29,9 @@ from app.services.tool.packager import (
 TEST_CONTENT = b"test content"
 TEST_AGENT = "test-agent"
 TEST_TOOL = "test-tool"
-TEST_TOOL_KEY = f"{TEST_AGENT}:{TEST_TOOL}"
+TEST_AGENT_KEY = "test_agent"
+TEST_TOOL_KEY = "test_tool"
+TEST_FULL_TOOL_KEY = f"{TEST_AGENT_KEY}:{TEST_TOOL_KEY}"
 TEST_TOKEN = "Bearer test-token"
 
 
@@ -410,14 +412,15 @@ class TestProcessTool:
     folder_zip: ClassVar[bytes] = b"test zip content"
     key: ClassVar[str] = TEST_TOOL_KEY
     project_uuid: ClassVar[str] = str(uuid4())
-    agent_name: ClassVar[str] = TEST_AGENT
-    tool_name: ClassVar[str] = TEST_TOOL
+    agent_key: ClassVar[str] = TEST_AGENT_KEY
+    tool_key: ClassVar[str] = TEST_TOOL_KEY
     tool_definition: ClassVar[dict[str, Any]] = {
         "agents": {
-            TEST_AGENT: {
+            TEST_AGENT_KEY: {
                 "slug": TEST_AGENT,
                 "tools": [
                     {
+                        "key": TEST_TOOL_KEY,
                         "slug": TEST_TOOL,
                         "source": {"entrypoint": "main.TestTool"},
                     }
@@ -446,8 +449,8 @@ class TestProcessTool:
                     self.folder_zip,
                     self.key,
                     self.project_uuid,
-                    self.agent_name,
-                    self.tool_name,
+                    self.agent_key,
+                    self.tool_key,
                     self.tool_definition,
                     self.processed_count,
                     self.total_count,
@@ -458,7 +461,7 @@ class TestProcessTool:
         assert response["success"] is True, "Should report success"
         assert tool_zip is not None, "Should return tool zip"
         assert response["data"] is not None, "Response should include data"
-        assert response["data"]["tool_name"] == self.tool_name, "Should include tool name"
+        assert response["data"]["tool_key"] == self.tool_key, "Should include tool key"
         assert response["progress"] == self.expected_progress, f"Progress should be {self.expected_progress}"
 
     def test_missing_agent_in_definition(self) -> None:
@@ -473,10 +476,10 @@ class TestProcessTool:
         response, tool_zip = asyncio.run(
             process_tool(
                 self.folder_zip,
-                f"{missing_agent}:{self.tool_name}",
+                f"{missing_agent}:{self.tool_key}",
                 self.project_uuid,
                 missing_agent,  # Use the missing agent name
-                self.tool_name,
+                self.tool_key,
                 self.tool_definition,  # Definition only contains TEST_AGENT
                 self.processed_count,
                 self.total_count,
@@ -491,13 +494,13 @@ class TestProcessTool:
         assert missing_agent in response["data"]["error"], "Error should include the missing agent name"
 
     @pytest.mark.parametrize(
-        "scenario, key, tool_name, expected_error",
+        "scenario, key, tool_key, expected_error",
         [
-            ("missing_tool", "test-agent:missing-tool", "missing-tool", "Could not find tool"),
-            ("exception", TEST_TOOL_KEY, TEST_TOOL, "Zip creation error"),
+            ("missing_tool", f"{TEST_AGENT_KEY}:missing_tool", "missing_tool", "Could not find tool"),
+            ("exception", TEST_FULL_TOOL_KEY, TEST_TOOL_KEY, "Zip creation error"),
         ],
     )
-    def test_error_scenarios(self, scenario: str, key: str, tool_name: str, expected_error: str) -> None:
+    def test_error_scenarios(self, scenario: str, key: str, tool_key: str, expected_error: str) -> None:
         """Test various error scenarios in tool processing."""
         import asyncio
 
@@ -516,8 +519,8 @@ class TestProcessTool:
                     self.folder_zip,
                     key,
                     self.project_uuid,
-                    self.agent_name,
-                    tool_name,
+                    self.agent_key,
+                    tool_key,
                     self.tool_definition,
                     self.processed_count,
                     self.total_count,

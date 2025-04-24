@@ -13,8 +13,8 @@ class RunToolRequestModel(BaseRequestModel):
     """Run tool request model."""
 
     test_definition: Json
-    tool_name: str
-    agent_name: str
+    tool_key: str
+    agent_key: str
     tool_credentials: Json
     tool_globals: Json
 
