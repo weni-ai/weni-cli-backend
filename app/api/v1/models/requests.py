@@ -9,14 +9,14 @@ class BaseRequestModel(BaseModel):
     toolkit_version: str
 
 
-class RunSkillRequestModel(BaseRequestModel):
-    """Run skill request model."""
+class RunToolRequestModel(BaseRequestModel):
+    """Run tool request model."""
 
     test_definition: Json
-    skill_name: str
+    tool_name: str
     agent_name: str
-    skill_credentials: Json
-    skill_globals: Json
+    tool_credentials: Json
+    tool_globals: Json
 
 
 class VerifyPermissionRequestModel(BaseModel):

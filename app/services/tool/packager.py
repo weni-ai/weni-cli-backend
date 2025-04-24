@@ -1,5 +1,5 @@
 """
-Utilities for packaging skills into deployable zip files.
+Utilities for packaging tools into deployable zip files.
 """
 
 import logging
@@ -15,7 +15,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.response import CLIResponse
-from app.services.skill.validator import validate_requirements_file
+from app.services.tool.validator import validate_requirements_file
 
 # Constants
 SUBPROCESS_TIMEOUT_SECONDS = 120
@@ -63,19 +63,19 @@ def install_packages(package_dir: Path, packages: list[Package]) -> None:
         raise ValueError(f"Timeout installing toolkit (>{SUBPROCESS_TIMEOUT_SECONDS}s)") from e
 
 
-def install_dependencies(package_dir: Path, requirements_path: Path, skill_key: str, toolkit_version: str) -> None:
+def install_dependencies(package_dir: Path, requirements_path: Path, tool_key: str, toolkit_version: str) -> None:
     """
     Install Python dependencies from requirements.txt into a target directory.
 
     Args:
         package_dir: Directory where packages will be installed
         requirements_path: Path to the requirements.txt file
-        skill_key: Identifier for the skill (used for logging)
+        tool_key: Identifier for the tool (used for logging)
         toolkit_version: The version of the toolkit
     Raises:
         ValueError: If installation fails or times out
     """
-    logger.info(f"Installing dependencies for {skill_key}")
+    logger.info(f"Installing dependencies for {tool_key}")
 
     try:
         process = subprocess.run(
@@ -101,17 +101,17 @@ def install_dependencies(package_dir: Path, requirements_path: Path, skill_key: 
         logger.error(f"Failed to install requirements: {e.stderr}")
         raise ValueError(f"Failed to install requirements: {e.stderr}") from e
     except subprocess.TimeoutExpired as e:
-        logger.error(f"Timeout installing requirements for {skill_key}")
+        logger.error(f"Timeout installing requirements for {tool_key}")
         raise ValueError(f"Timeout installing requirements (>{SUBPROCESS_TIMEOUT_SECONDS}s)") from e
 
 
-def build_lambda_function_file(skill_entrypoint_module: str, skill_entrypoint_class: str) -> str:
+def build_lambda_function_file(tool_entrypoint_module: str, tool_entrypoint_class: str) -> str:
     """
     Build a Lambda function file from a template.
 
     Args:
-        skill_entrypoint_module: The module name containing the entrypoint
-        skill_entrypoint_class: The class name to use as entrypoint
+        tool_entrypoint_module: The module name containing the entrypoint
+        tool_entrypoint_class: The class name to use as entrypoint
 
     Returns:
         The contents of the Lambda function file
@@ -130,51 +130,51 @@ def build_lambda_function_file(skill_entrypoint_module: str, skill_entrypoint_cl
     template_content = template_content.replace("{{sentry_dsn}}", settings.FUNCTION_SENTRY_DSN)
 
     # Replace placeholders in the template
-    return template_content.format(module=skill_entrypoint_module, class_name=skill_entrypoint_class)
+    return template_content.format(module=tool_entrypoint_module, class_name=tool_entrypoint_class)
 
 
-def create_skill_zip(  # noqa: PLR0913, PLR0915
-    skill_folder_zip_content: bytes,
-    skill_key: str,
+def create_tool_zip(  # noqa: PLR0913, PLR0915
+    tool_folder_zip_content: bytes,
+    tool_key: str,
     project_uuid: str,
-    skill_entrypoint_module: str,
-    skill_entrypoint_class: str,
+    tool_entrypoint_module: str,
+    tool_entrypoint_class: str,
     toolkit_version: str,
 ) -> BytesIO:
     """
-    Create a skill zip file from a folder zip file.
+    Create a tool zip file from a folder zip file.
 
-    1. Extracts the skill folder zip content to a temporary directory
+    1. Extracts the tool folder zip content to a temporary directory
     2. Installs dependencies from requirements.txt if present
     3. Creates a Lambda function entry point
     4. Re-zips the content with installed dependencies
 
     Args:
-        skill_folder_zip_content: Bytes content of the zipped skill folder
-        skill_key: The skill key identifier
+        tool_folder_zip_content: Bytes content of the zipped tool folder
+        tool_key: The tool key identifier
         project_uuid: The UUID of the project
-        skill_entrypoint_module: The module name containing the entrypoint
-        skill_entrypoint_class: The class name to use as entrypoint
+        tool_entrypoint_module: The module name containing the entrypoint
+        tool_entrypoint_class: The class name to use as entrypoint
         toolkit_version: The version of the toolkit
     Returns:
-        BytesIO: A buffer containing the zipped skill with installed dependencies
+        BytesIO: A buffer containing the zipped tool with installed dependencies
 
     Raises:
         ValueError: If there are issues with the requirements file or installation
         IOError: If there are issues with file operations
     """
     temp_dir = None
-    temp_prefix = f"skill_{skill_key}_{project_uuid}_"
+    temp_prefix = f"tool_{tool_key}_{project_uuid}_"
 
     try:
-        logger.info(f"Creating skill zip for {skill_key} in project {project_uuid}")
+        logger.info(f"Creating tool zip for {tool_key} in project {project_uuid}")
 
         # Create a temporary directory
         temp_dir = tempfile.mkdtemp(prefix=temp_prefix)
         temp_path = Path(temp_dir)
 
         # Extract zip to temporary directory
-        zip_buffer = BytesIO(skill_folder_zip_content)
+        zip_buffer = BytesIO(tool_folder_zip_content)
         with zipfile.ZipFile(zip_buffer) as zip_ref:
             logger.debug(f"Extracting {len(zip_ref.namelist())} files to {temp_dir}")
             zip_ref.extractall(temp_dir)
@@ -194,26 +194,26 @@ def create_skill_zip(  # noqa: PLR0913, PLR0915
         # Check for requirements.txt
         requirements_path = temp_path / "requirements.txt"
         if requirements_path.exists():
-            logger.info(f"Found requirements.txt in {skill_key}")
+            logger.info(f"Found requirements.txt in {tool_key}")
 
             # Validate requirements file for security
             is_valid, error_message = validate_requirements_file(str(requirements_path))
             if not is_valid:
-                logger.warning(f"Invalid requirements.txt in {skill_key}: {error_message}")
+                logger.warning(f"Invalid requirements.txt in {tool_key}: {error_message}")
                 raise ValueError(f"Invalid requirements.txt: {error_message}")
 
             # Install dependencies
-            install_dependencies(package_dir, requirements_path, skill_key, toolkit_version)
+            install_dependencies(package_dir, requirements_path, tool_key, toolkit_version)
 
         # Create the lambda function file
-        logger.info(f"Creating Lambda function for {skill_key}")
-        lambda_function_content = build_lambda_function_file(skill_entrypoint_module, skill_entrypoint_class)
+        logger.info(f"Creating Lambda function for {tool_key}")
+        lambda_function_content = build_lambda_function_file(tool_entrypoint_module, tool_entrypoint_class)
         lambda_function_path = temp_path / "lambda_function.py"
         with open(lambda_function_path, "w") as f:
             f.write(lambda_function_content)
 
         # Create a new zip
-        logger.info(f"Creating output zip for {skill_key}")
+        logger.info(f"Creating output zip for {tool_key}")
         output_buffer = BytesIO()
         with zipfile.ZipFile(output_buffer, "w", zipfile.ZIP_DEFLATED) as zip_out:
             # Walk through all files in the temp directory
@@ -231,19 +231,19 @@ def create_skill_zip(  # noqa: PLR0913, PLR0915
                         # move content out of /package and insert it at root
                         zip_path = str(arc_name).replace("package/", "", 1)
                     else:
-                        # Move other files to skill/ directory
-                        zip_path = f"skill/{arc_name}"
+                        # Move other files to tool/ directory
+                        zip_path = f"tool/{arc_name}"
 
                     zip_out.write(file_path, arcname=zip_path)
 
         # Prepare the output
         output_buffer.seek(0)
-        output_buffer.name = f"{skill_key}.zip"
-        logger.info(f"Completed creation of skill zip for {skill_key}")
+        output_buffer.name = f"{tool_key}.zip"
+        logger.info(f"Completed creation of tool zip for {tool_key}")
         return output_buffer
 
     except Exception as e:
-        logger.exception(f"Error creating skill zip for {skill_key}: {str(e)}")
+        logger.exception(f"Error creating tool zip for {tool_key}: {str(e)}")
         raise
 
     finally:
@@ -253,40 +253,40 @@ def create_skill_zip(  # noqa: PLR0913, PLR0915
             shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-async def process_skill(  # noqa: PLR0913
+async def process_tool(  # noqa: PLR0913
     folder_zip: bytes,
     key: str,
     project_uuid: str,
     agent_slug: str,
-    skill_slug: str,
+    tool_slug: str,
     definition: dict[str, Any],
     processed_count: int,
     total_count: int,
     toolkit_version: str,
 ) -> tuple[CLIResponse, BytesIO | None]:
     """
-    Process a single skill file.
+    Process a single tool file.
 
     Args:
-        folder_zip: The skill folder zip file content
-        key: The skill key (agent:skill)
+        folder_zip: The tool folder zip file content
+        key: The tool key (agent:tool)
         project_uuid: The UUID of the project
         agent_slug: The slug of the agent
-        skill_slug: The name of the skill
+        tool_slug: The name of the tool
         definition: The definition data
-        processed_count: The number of skills processed so far
-        total_count: The total number of skills to process
+        processed_count: The number of tools processed so far
+        total_count: The total number of tools to process
         toolkit_version: The version of the toolkit
 
     Returns:
-        Tuple of (response, skill_zip_bytes or None if error)
+        Tuple of (response, tool_zip_bytes or None if error)
     """
     # Reduce the progress to be always between 0.2 and 0.9
     progress = 0.2 + (processed_count / total_count) * 0.7
-    logger.info(f"Processing skill {skill_slug} for agent {agent_slug} ({processed_count}/{total_count})")
+    logger.info(f"Processing tool {tool_slug} for agent {agent_slug} ({processed_count}/{total_count})")
 
     try:
-        # Get skill entrypoint
+        # Get tool entrypoint
         agent_info = next(
             (agent for agent in definition["agents"].values() if agent["slug"] == agent_slug),
             None,
@@ -295,63 +295,63 @@ async def process_skill(  # noqa: PLR0913
         if not agent_info:
             raise ValueError(f"Could not find agent {agent_slug} in definition")
 
-        skill_info = next(
-            (skill for skill in agent_info["skills"] if skill["slug"] == skill_slug),
+        tool_info = next(
+            (tool for tool in agent_info["tools"] if tool["slug"] == tool_slug),
             None,
         )
 
-        if not skill_info:
-            raise ValueError(f"Could not find skill {skill_slug} for agent {agent_slug} in definition")
+        if not tool_info:
+            raise ValueError(f"Could not find tool {tool_slug} for agent {agent_slug} in definition")
 
-        skill_entrypoint = skill_info["source"]["entrypoint"]
-        skill_entrypoint_module = skill_entrypoint.split(".")[0]
-        skill_entrypoint_class = skill_entrypoint.split(".")[1]
-        logger.debug(f"Skill entrypoint: {skill_entrypoint_module}.{skill_entrypoint_class}")
+        tool_entrypoint = tool_info["source"]["entrypoint"]
+        tool_entrypoint_module = tool_entrypoint.split(".")[0]
+        tool_entrypoint_class = tool_entrypoint.split(".")[1]
+        logger.debug(f"Tool entrypoint: {tool_entrypoint_module}.{tool_entrypoint_class}")
 
         # Create zip package
-        logger.info(f"Creating zip package for skill {skill_slug}")
-        skill_zip_bytes = create_skill_zip(
+        logger.info(f"Creating zip package for tool {tool_slug}")
+        tool_zip_bytes = create_tool_zip(
             folder_zip,
             key,
             str(project_uuid),
-            skill_entrypoint_module,
-            skill_entrypoint_class,
+            tool_entrypoint_module,
+            tool_entrypoint_class,
             toolkit_version,
         )
 
-        file_size_kb = len(skill_zip_bytes.getvalue()) / 1024
+        file_size_kb = len(tool_zip_bytes.getvalue()) / 1024
         logger.debug(f"Successfully created zip for {key}, size: {file_size_kb:.2f} KB")
 
         # Prepare success response
         response: CLIResponse = {
-            "message": f"Skill {skill_slug} processed successfully ({processed_count}/{total_count})",
+            "message": f"Tool {tool_slug} processed successfully ({processed_count}/{total_count})",
             "data": {
-                "skill_name": skill_slug,
+                "tool_name": tool_slug,
                 "agent_name": agent_slug,
                 "size_kb": round(file_size_kb, 2),
                 "processed": processed_count,
                 "total": total_count,
             },
             "success": True,
-            "code": "SKILL_PROCESSED",
+            "code": "TOOL_PROCESSED",
             "progress": progress,
         }
 
-        return response, skill_zip_bytes
+        return response, tool_zip_bytes
 
     except Exception as e:
-        logger.error(f"Failed to process skill {key}: {str(e)}")
+        logger.error(f"Failed to process tool {key}: {str(e)}")
         error_response: CLIResponse = {
-            "message": f"Failed to process skill {skill_slug}",
+            "message": f"Failed to process tool {key}",
             "data": {
-                "skill_name": skill_slug,
+                "tool_name": tool_slug,
                 "agent_name": agent_slug,
                 "error": str(e),
                 "processed": processed_count,
                 "total": total_count,
             },
             "success": False,
-            "code": "SKILL_PROCESSING_ERROR",
+            "code": "TOOL_PROCESSING_ERROR",
             "progress": progress,
         }
         return error_response, None

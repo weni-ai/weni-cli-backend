@@ -1,5 +1,5 @@
 """
-Validation utilities for skill packages.
+Validation utilities for tool packages.
 """
 
 from pathlib import Path
