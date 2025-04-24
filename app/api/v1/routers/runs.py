@@ -99,7 +99,7 @@ async def run_tool_test(  # noqa: PLR0915
                 raise ValueError("Failed to process tool, aborting test run")
 
             response = {
-                "message": "Creating lambda function",
+                "message": "Creating tool",
                 "data": {
                     "project_uuid": str(data.project_uuid),
                     "function_name": function_name,
@@ -118,12 +118,12 @@ async def run_tool_test(  # noqa: PLR0915
             )
 
             if not lambda_function.function_arn or not lambda_function.function_name:
-                raise ValueError("Failed to create lambda function")
+                raise ValueError("Failed to create tool")
 
             if not await lambda_client.wait_for_function_active(lambda_function.function_arn):
-                raise ValueError("Lambda function did not became active")
+                raise ValueError("Tool did not became active")
 
-            logger.info(f"Lambda function {lambda_function.function_arn} active, invoking...")
+            logger.info(f"Tool {lambda_function.function_arn} active, invoking...")
 
             response = {
                 "message": "Running test cases",
@@ -205,6 +205,6 @@ async def run_tool_test(  # noqa: PLR0915
             try:
                 lambda_client.delete_function(function_name=function_name)
             except Exception as e:
-                logger.error(f"Error deleting lambda function {function_name}: {str(e)}")
+                logger.error(f"Error deleting tool {function_name}: {str(e)}")
 
     return StreamingResponse(response_stream(), media_type="application/x-ndjson")
