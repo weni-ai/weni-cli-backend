@@ -5,7 +5,7 @@ Tool Logs endpoints
 import json
 from typing import Annotated
 
-from fastapi import APIRouter, Header, status
+from fastapi import APIRouter, Header, Query, status
 from fastapi.responses import JSONResponse
 
 from app.api.v1.models.requests import GetLogsRequestModel
@@ -17,9 +17,11 @@ router = APIRouter()
 
 @router.get("/")
 async def get_logs(
-    data: GetLogsRequestModel,
+    # Header parameters
     authorization: Annotated[str, Header()],
     x_project_uuid: Annotated[str, Header()],
+    # Query parameters
+    data: Annotated[GetLogsRequestModel, Query()],
 ) -> JSONResponse:
     nexus_client = NexusClient(authorization, x_project_uuid)
     log_group = nexus_client.get_log_group(data.agent_key, data.tool_key)

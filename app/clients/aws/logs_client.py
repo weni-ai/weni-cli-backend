@@ -53,12 +53,16 @@ class AWSLogsClient:
         try:
             current_token = next_token  # Use a different variable for the loop
             while True:
+
+                exclude_pattern = '-"START RequestId" -"END RequestId" -"REPORT RequestId" -"INIT_START Runtime Version"'  # noqa: E501
+                final_filter_pattern = f'"{filter_pattern}" {exclude_pattern}' if filter_pattern else exclude_pattern
+
                 kwargs = {
                     "logGroupIdentifier": log_group_arn,
                     "startTime": start_time_ms,
                     "endTime": end_time_ms,
                     "limit": 1000,
-                    "filterPattern": f'"{filter_pattern}" -"START RequestId" -"END RequestId" -"REPORT RequestId" -"INIT_START Runtime Version"',  # noqa: E501
+                    "filterPattern": final_filter_pattern,
                 }
                 if current_token:
                     kwargs["nextToken"] = current_token
