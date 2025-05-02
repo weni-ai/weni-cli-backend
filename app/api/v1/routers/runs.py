@@ -14,6 +14,7 @@ from starlette.datastructures import UploadFile
 
 from app.api.v1.models.requests import RunSkillRequestModel
 from app.clients.aws import AWSLambdaClient
+from app.clients.aws.lambda_client import LambdaFunction
 from app.core.response import CLIResponse, send_response
 from app.services.skill.packager import process_skill
 
@@ -113,20 +114,20 @@ async def run_skill_test(  # noqa: PLR0915
             yield send_response(response, request_id=request_id)
 
             # Create lambda function
-            lambda_function = lambda_client.create_function(
+            lambda_function: LambdaFunction = lambda_client.create_function(
                 function_name=function_name,
                 handler="lambda_function.lambda_handler",
                 code=skill_zip_bytes,
                 description=f"CLI run for skill {data.skill_name} by {data.agent_name}. Project: {data.project_uuid}",
             )
 
-            if not lambda_function.function_arn or not lambda_function.function_name:
+            if not lambda_function.arn or not lambda_function.name:
                 raise ValueError("Failed to create lambda function")
 
-            if not await lambda_client.wait_for_function_active(lambda_function.function_arn):
+            if not await lambda_client.wait_for_function_active(lambda_function.arn):
                 raise ValueError("Lambda function did not became active")
 
-            logger.info(f"Lambda function {lambda_function.function_arn} active, invoking...")
+            logger.info(f"Lambda function {lambda_function.arn} active, invoking...")
 
             response = {
                 "message": "Running test cases",
@@ -160,8 +161,8 @@ async def run_skill_test(  # noqa: PLR0915
 
                 test_event = {
                     "agent_name": data.agent_name,
-                    "action_group": lambda_function.function_name,
-                    "function": lambda_function.function_name,
+                    "action_group": lambda_function.name,
+                    "function": lambda_function.name,
                     "parameters": parameters,
                     "sessionAttributes": {
                         "credentials": json.dumps(test_data.get("credentials", data.skill_credentials)),
@@ -171,7 +172,7 @@ async def run_skill_test(  # noqa: PLR0915
 
                 # Invoke lambda function
                 invoke_result, invoke_start_time, invoke_end_time = lambda_client.invoke_function(
-                    lambda_function.function_arn, test_event
+                    lambda_function.arn, test_event
                 )
 
                 test_response: CLIResponse = {

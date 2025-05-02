@@ -600,38 +600,43 @@ class TestPushToNexus:
     request_id: ClassVar[str] = str(uuid4())
     authorization: ClassVar[str] = TEST_TOKEN
 
-    def test_success(self) -> None:
+    def test_success(self, mocker: MockerFixture) -> None:
         """Test successful push to Nexus."""
         from app.api.v1.routers.agents import push_to_nexus
 
-        with pytest.MonkeyPatch().context() as mp:
-            # Create a mock response with status_code
-            mock_response = type("MockResponse", (), {"status_code": status.HTTP_200_OK, "text": "Success"})
-            mock_client = type("MockNexusClient", (), {"push_agents": lambda self, *args, **kwargs: mock_response()})
-            mp.setattr("app.api.v1.routers.agents.NexusClient", lambda auth: mock_client())
+        # Create a mock response with status_code
+        mock_response = mocker.Mock(spec=requests.Response)
+        mock_response.status_code = status.HTTP_200_OK
+        mock_response.text = "Success"
 
-            success, response = push_to_nexus(
-                self.project_uuid, self.definition, self.skill_mapping, self.request_id, self.authorization
-            )
+        # Create a mock NexusClient instance
+        mock_nexus_client = mocker.MagicMock()
+        mock_nexus_client.push_agents.return_value = mock_response
+
+        # Patch the NexusClient class to return our mock instance
+        mocker.patch("app.api.v1.routers.agents.NexusClient", return_value=mock_nexus_client)
+
+        success, response = push_to_nexus(
+            self.project_uuid, self.definition, self.skill_mapping, self.request_id, self.authorization
+        )
 
         assert success is True, "Should report success"
         assert response is None, "Should not return a response"
 
-    def test_exception(self) -> None:
+    def test_exception(self, mocker: MockerFixture) -> None:
         """Test exception handling in Nexus push."""
         from app.api.v1.routers.agents import push_to_nexus
 
-        with pytest.MonkeyPatch().context() as mp:
-            # Mock exception
-            class MockNexusClient:
-                def push_agents(self, *args: Any, **kwargs: Any) -> None:
-                    raise RuntimeError("API error")
+        # Create a mock NexusClient instance that raises an error
+        mock_nexus_client = mocker.MagicMock()
+        mock_nexus_client.push_agents.side_effect = RuntimeError("API error")
 
-            mp.setattr("app.api.v1.routers.agents.NexusClient", lambda auth: MockNexusClient())
+        # Patch the NexusClient class to return our mock instance
+        mocker.patch("app.api.v1.routers.agents.NexusClient", return_value=mock_nexus_client)
 
-            success, response = push_to_nexus(
-                self.project_uuid, self.definition, self.skill_mapping, self.request_id, self.authorization
-            )
+        success, response = push_to_nexus(
+            self.project_uuid, self.definition, self.skill_mapping, self.request_id, self.authorization
+        )
 
         assert success is False, "Should report failure"
         assert response is not None, "Should return an error response"
@@ -647,19 +652,27 @@ class TestPushToNexus:
             (status.HTTP_500_INTERNAL_SERVER_ERROR, "Server error", "Failed to push agents: 500"),
         ],
     )
-    def test_non_200_status_codes(self, status_code: int, status_text: str, expected_error_fragment: str) -> None:
+    def test_non_200_status_codes(
+        self, mocker: MockerFixture, status_code: int, status_text: str, expected_error_fragment: str
+    ) -> None:
         """Test handling of various non-200 status codes from Nexus API."""
         from app.api.v1.routers.agents import push_to_nexus
 
-        with pytest.MonkeyPatch().context() as mp:
-            # Create a mock response with the specified non-200 status code
-            error_response = type("MockResponse", (), {"status_code": status_code, "text": status_text})
-            mock_client = type("MockNexusClient", (), {"push_agents": lambda self, *args, **kwargs: error_response()})
-            mp.setattr("app.api.v1.routers.agents.NexusClient", lambda auth: mock_client())
+        # Create a mock response with the specified non-200 status code
+        mock_response = mocker.Mock(spec=requests.Response)
+        mock_response.status_code = status_code
+        mock_response.text = status_text
 
-            success, response = push_to_nexus(
-                self.project_uuid, self.definition, self.skill_mapping, self.request_id, self.authorization
-            )
+        # Create a mock NexusClient instance
+        mock_nexus_client = mocker.MagicMock()
+        mock_nexus_client.push_agents.return_value = mock_response
+
+        # Patch the NexusClient class to return our mock instance
+        mocker.patch("app.api.v1.routers.agents.NexusClient", return_value=mock_nexus_client)
+
+        success, response = push_to_nexus(
+            self.project_uuid, self.definition, self.skill_mapping, self.request_id, self.authorization
+        )
 
         assert success is False, f"Should report failure when status code is {status_code}"
         assert response is not None, "Should return an error response"

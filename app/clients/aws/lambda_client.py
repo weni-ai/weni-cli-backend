@@ -15,15 +15,32 @@ logger = logging.getLogger(__name__)
 
 
 class LambdaFunction(BaseModel):
-    function_arn: str | None
-    function_name: str | None
+    arn: str | None
+    name: str | None
+    log_group: str | None
 
 
 class AWSLambdaClient:
     def __init__(self) -> None:
         self.client = boto3.client("lambda", region_name=settings.AWS_REGION)
 
-    def create_function(self, function_name: str, handler: str, code: BytesIO, description: str) -> LambdaFunction:
+    def get_function(self, function_arn: str) -> LambdaFunction:
+        """
+        Get a lambda function
+        """
+        response = self.client.get_function(FunctionName=function_arn)
+
+        config = response.get("Configuration", {})
+
+        return LambdaFunction(
+            arn=config.get("FunctionArn"),
+            name=config.get("FunctionName"),
+            log_group=config.get("LoggingConfig", {}).get("LogGroup", ""),
+        )
+
+    def create_function(
+        self, function_name: str, handler: str, code: BytesIO, description: str
+    ) -> LambdaFunction:
         """
         Creates a lambda function
 
@@ -54,8 +71,12 @@ class AWSLambdaClient:
             },
         )
 
-        response = LambdaFunction(function_arn=lambda_function.get("FunctionArn"), function_name=function_name)
-        logger.info(f"Lambda function {function_name} created. ARN: {response.function_arn}")
+        response = LambdaFunction(
+            arn=lambda_function.get("FunctionArn"),
+            name=function_name,
+            log_group=log_group,
+        )
+        logger.info(f"Lambda function {function_name} created. ARN: {response.arn}")
         return response
 
     def delete_function(self, function_name: str) -> None:
@@ -70,7 +91,9 @@ class AWSLambdaClient:
         self.client.delete_function(FunctionName=function_name)
         logger.info(f"Lambda function {function_name} deleted.")
 
-    def invoke_function(self, function_arn: str, event: dict[str, Any]) -> tuple[Any, float, float]:
+    def invoke_function(
+        self, function_arn: str, event: dict[str, Any]
+    ) -> tuple[Any, float, float]:
         """
         Invokes a lambda function and returns the response and the start time
 
@@ -93,7 +116,9 @@ class AWSLambdaClient:
         )
 
         end_time = datetime.datetime.now().timestamp()
-        logger.info(f"Lambda function {function_arn} invoked in {end_time - start_time} seconds.")
+        logger.info(
+            f"Lambda function {function_arn} invoked in {end_time - start_time} seconds."
+        )
 
         # Decode base64 encoded logs
         logs = base64.b64decode(invoke_response["LogResult"]).decode("utf-8")
@@ -111,7 +136,9 @@ class AWSLambdaClient:
         }
         return result, start_time, end_time
 
-    async def wait_for_function_active(self, function_arn: str, max_attempts: int = 10) -> bool:
+    async def wait_for_function_active(
+        self, function_arn: str, max_attempts: int = 10
+    ) -> bool:
         """
         Wait for Lambda function to become active
 
@@ -130,7 +157,9 @@ class AWSLambdaClient:
         retry_delay = 3
 
         for attempt in range(max_attempts):
-            logger.info(f"Waiting for function {function_arn} to become active - attempt {attempt + 1}")
+            logger.info(
+                f"Waiting for function {function_arn} to become active - attempt {attempt + 1}"
+            )
             try:
                 response = self.client.get_function(FunctionName=function_arn)
                 state = response["Configuration"]["State"]

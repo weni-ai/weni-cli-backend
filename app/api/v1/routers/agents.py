@@ -217,14 +217,14 @@ def push_to_nexus(
     """
     try:
         logger.info(f"Sending {len(skill_mapping)} processed skills to Nexus for project {project_uuid}")
-        nexus_client = NexusClient(authorization)
+        nexus_client = NexusClient(authorization, str(project_uuid))
 
         # We need to change the entrypoint to the lambda function we've created
         for _, agent_data in definition["agents"].items():
             for skill in agent_data["skills"]:
                 skill["source"]["entrypoint"] = "lambda_function.lambda_handler"
 
-        response = nexus_client.push_agents(str(project_uuid), definition, skill_mapping)
+        response = nexus_client.push_agents(definition, skill_mapping)
 
         if response.status_code != status.HTTP_200_OK:
             raise Exception(f"Failed to push agents: {response.status_code} {response.text}")
