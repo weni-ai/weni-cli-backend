@@ -38,14 +38,14 @@ def agents_definition() -> dict:
             "test-agent": {
                 "name": "Test Agent",
                 "description": "Test Agent Description",
-                "skills": [
+                "tools": [
                     {
-                        "name": "test-skill",
-                        "description": "Test Skill Description",
-                        "slug": "test-skill",
+                        "name": "test-tool",
+                        "description": "Test Tool Description",
+                        "slug": "test-tool",
                         "source": {
-                            "path": "test_skill.zip",
-                            "entrypoint": "main.TestSkill",
+                            "path": "test_tool.zip",
+                            "entrypoint": "main.TestTool",
                         },
                         "parameters": [
                             {
@@ -64,9 +64,9 @@ def agents_definition() -> dict:
 
 
 @pytest.fixture
-def skill_files() -> dict:
-    """Return sample skill files."""
-    return {"skill-test-skill": ("test_skill.zip", b"test skill content", "application/zip")}
+def tool_files() -> dict:
+    """Return sample tool files."""
+    return {"tool-test-tool": ("test_tool.zip", b"test tool content", "application/zip")}
 
 
 class TestNexusClient:
@@ -85,7 +85,7 @@ class TestNexusClient:
         nexus_client: NexusClient,
         project_uuid: str,
         agents_definition: dict,
-        skill_files: dict,
+        tool_files: dict,
     ) -> None:
         """Test the push_agents method."""
         # Setup mocked response
@@ -93,7 +93,7 @@ class TestNexusClient:
         requests_mock.post(expected_url, json={"success": True}, status_code=status.HTTP_200_OK)
 
         # Call the method
-        response = nexus_client.push_agents(agents_definition, skill_files)
+        response = nexus_client.push_agents(agents_definition, tool_files)
 
         # Assertions
         assert response.status_code == status.HTTP_200_OK
@@ -113,7 +113,7 @@ class TestNexusClient:
         assert json.dumps(agents_definition) in last_request.text
 
         # Verify files were present in the request
-        assert "skill-test-skill" in last_request.text
+        assert "tool-test-tool" in last_request.text
 
     def test_push_agents_error_response(  # noqa: PLR0913
         self,
@@ -121,7 +121,7 @@ class TestNexusClient:
         nexus_client: NexusClient,
         project_uuid: str,
         agents_definition: dict,
-        skill_files: dict,
+        tool_files: dict,
     ) -> None:
         """Test push_agents method when receiving an error response."""
         # Setup mocked response
@@ -129,7 +129,7 @@ class TestNexusClient:
         requests_mock.post(expected_url, json={"error": "Bad request"}, status_code=status.HTTP_400_BAD_REQUEST)
 
         # Call the method
-        response = nexus_client.push_agents(agents_definition, skill_files)
+        response = nexus_client.push_agents(agents_definition, tool_files)
 
         # Assertions
         assert response.status_code == status.HTTP_400_BAD_REQUEST

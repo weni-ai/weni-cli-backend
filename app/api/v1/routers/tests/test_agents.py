@@ -21,8 +21,10 @@ from app.tests.utils import AsyncMock
 # Common test constants
 TEST_CONTENT = b"test content"
 TEST_AGENT = "test-agent"
-TEST_SKILL = "test-skill"
-TEST_SKILL_KEY = f"{TEST_AGENT}:{TEST_SKILL}"
+TEST_TOOL = "test-tool"
+TEST_TOOL_KEY = "test_tool"
+TEST_AGENT_KEY = "test_agent"
+TEST_FULL_TOOL_KEY = f"{TEST_AGENT_KEY}:{TEST_TOOL_KEY}"
 TEST_TOKEN = "Bearer test-token"
 
 
@@ -60,16 +62,17 @@ def agent_definition() -> dict[str, Any]:
     """Create a standard agent definition for testing."""
     return {
         "agents": {
-            TEST_AGENT: {
+            TEST_AGENT_KEY: {
                 "name": "Test Agent",
                 "slug": TEST_AGENT,
                 "description": "A test agent",
-                "skills": [
+                "tools": [
                     {
-                        "slug": TEST_SKILL,
-                        "name": "Test Skill",
-                        "description": "A test skill",
-                        "source": {"entrypoint": "main.TestSkill"},
+                        "key": TEST_TOOL_KEY,
+                        "slug": TEST_TOOL,
+                        "name": "Test Tool",
+                        "description": "A test tool",
+                        "source": {"entrypoint": "main.TestTool"},
                     }
                 ],
             }
@@ -96,7 +99,7 @@ def post_request_factory(
                 "toolkit_version": "1.0.0",  # Add default toolkit version for tests
             },
             files={
-                TEST_SKILL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
+                TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
             },
             headers=auth_header,
         )
@@ -155,36 +158,36 @@ class TestAgentConfigEndpoint:
     def mock_success_dependencies(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock dependencies for successful test."""
         mock_upload_file = UploadFile(
-            filename="test_skill.zip",
+            filename="test_tool.zip",
             file=io.BytesIO(TEST_CONTENT),
         )
         monkeypatch.setattr(
-            "app.api.v1.routers.agents.extract_skill_files",
-            AsyncMock(return_value={TEST_SKILL_KEY: mock_upload_file}),
+            "app.api.v1.routers.agents.extract_tool_files",
+            AsyncMock(return_value={TEST_FULL_TOOL_KEY: mock_upload_file}),
         )
         monkeypatch.setattr(
-            "app.api.v1.routers.agents.read_skills_content",
-            AsyncMock(return_value=[(TEST_SKILL_KEY, TEST_CONTENT)]),
+            "app.api.v1.routers.agents.read_tools_content",
+            AsyncMock(return_value=[(TEST_FULL_TOOL_KEY, TEST_CONTENT)]),
         )
         process_response = {
-            "message": "Skill processed successfully",
+            "message": "Tool processed successfully",
             "data": {
-                "skill_name": TEST_SKILL,
-                "agent_name": TEST_AGENT,
+                "tool_key": TEST_TOOL_KEY,
+                "agent_key": TEST_AGENT_KEY,
                 "size_kb": 1.0,
                 "progress": 100,
             },
             "success": True,
-            "code": "SKILL_PROCESSED",
+            "code": "TOOL_PROCESSED",
         }
 
-        # Use a custom mock for process_skill that accepts the toolkit_version parameter
-        async def mock_process_skill(*args: Any, **kwargs: Any) -> tuple[dict[str, Any], io.BytesIO]:
+        # Use a custom mock for process_tool that accepts the toolkit_version parameter
+        async def mock_process_tool(*args: Any, **kwargs: Any) -> tuple[dict[str, Any], io.BytesIO]:
             return (process_response, io.BytesIO(b"processed content"))
 
-        monkeypatch.setattr("app.services.skill.packager.process_skill", mock_process_skill)
+        monkeypatch.setattr("app.services.tool.packager.process_tool", mock_process_tool)
         monkeypatch.setattr(
-            "app.services.skill.packager.create_skill_zip", lambda *args, **kwargs: io.BytesIO(b"packed content")
+            "app.services.tool.packager.create_tool_zip", lambda *args, **kwargs: io.BytesIO(b"packed content")
         )
         monkeypatch.setattr(
             "app.api.v1.routers.agents.push_to_nexus",
@@ -231,7 +234,7 @@ class TestAgentConfigEndpoint:
                     "toolkit_version": "1.0.0",  # Add toolkit_version to avoid failing on that parameter
                 },
                 {
-                    TEST_SKILL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
+                    TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
                 },
                 None,  # Use default auth header
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -245,7 +248,7 @@ class TestAgentConfigEndpoint:
                     "definition": json.dumps({"agents": {}}),
                 },
                 {
-                    TEST_SKILL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
+                    TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
                 },
                 None,  # Use default auth header
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -260,7 +263,7 @@ class TestAgentConfigEndpoint:
                     "toolkit_version": "1.0.0",  # Add toolkit_version to avoid failing on that parameter
                 },
                 {
-                    TEST_SKILL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
+                    TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
                 },
                 None,  # Use default auth header
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -275,7 +278,7 @@ class TestAgentConfigEndpoint:
                     "toolkit_version": "1.0.0",  # Add toolkit_version to avoid failing on that parameter
                 },
                 {
-                    TEST_SKILL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
+                    TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
                 },
                 {
                     "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
@@ -285,14 +288,14 @@ class TestAgentConfigEndpoint:
                 None,  # No custom setup
             ),
             (
-                "process_skill_error",
+                "process_tool_error",
                 None,  # Will be set in the test
                 None,  # Will be set in the test
                 None,  # Use default auth header
                 status.HTTP_200_OK,
-                "Should handle process_skill error",
+                "Should handle process_tool error",
                 {
-                    "mock_process_skill": AsyncMock(side_effect=RuntimeError("Simulated error in processing")),
+                    "mock_process_tool": AsyncMock(side_effect=RuntimeError("Simulated error in processing")),
                 },
             ),
         ],
@@ -313,14 +316,14 @@ class TestAgentConfigEndpoint:
         mock_auth_middleware: None,
     ) -> None:
         """Test validation errors for agent config endpoint."""
-        # For the process_skill_error case, we need a special setup
-        if test_id == "process_skill_error":
+        # For the process_tool_error case, we need a special setup
+        if test_id == "process_tool_error":
             # Use the default post_request_factory
             # But first set up the mocks as defined in custom_setup
             if custom_setup:
                 for key, value in custom_setup.items():
-                    if key == "mock_process_skill":
-                        monkeypatch.setattr("app.services.skill.packager.process_skill", value)
+                    if key == "mock_process_tool":
+                        monkeypatch.setattr("app.services.tool.packager.process_tool", value)
 
             response = post_request_factory()
         else:
@@ -336,39 +339,39 @@ class TestAgentConfigEndpoint:
         self, post_request_factory: Callable[[], Any], mock_auth_middleware: None, mocker: MockerFixture
     ) -> None:
         """Test handling of error response from push_to_nexus."""
-        # Mock successful skill processing
+        # Mock successful tool processing
         process_response = {
-            "message": "Skill processed successfully",
+            "message": "Tool processed successfully",
             "data": {
-                "skill_name": TEST_SKILL,
-                "agent_name": TEST_AGENT,
+                "tool_key": TEST_TOOL_KEY,
+                "agent_key": TEST_AGENT_KEY,
                 "size_kb": 1.0,
                 "progress": 100,
             },
             "success": True,
-            "code": "SKILL_PROCESSED",
+            "code": "TOOL_PROCESSED",
         }
 
-        # Mock create_skill_zip to avoid zip file error
+        # Mock create_tool_zip to avoid zip file error
         mocker.patch(
-            "app.services.skill.packager.create_skill_zip",
+            "app.services.tool.packager.create_tool_zip",
             return_value=io.BytesIO(b"valid zip content"),
         )
 
-        # Mock process_skill to succeed
+        # Mock process_tool to succeed
         mocker.patch(
-            "app.services.skill.packager.process_skill",
+            "app.services.tool.packager.process_tool",
             new=AsyncMock(return_value=(process_response, io.BytesIO(b"processed content"))),
         )
 
-        # Mock extract_skill_files and read_skills_content to return test data
+        # Mock extract_tool_files and read_tools_content to return test data
         mocker.patch(
-            "app.api.v1.routers.agents.extract_skill_files",
-            new=AsyncMock(return_value={TEST_SKILL_KEY: mocker.Mock()}),
+            "app.api.v1.routers.agents.extract_tool_files",
+            new=AsyncMock(return_value={TEST_FULL_TOOL_KEY: mocker.Mock()}),
         )
         mocker.patch(
-            "app.api.v1.routers.agents.read_skills_content",
-            new=AsyncMock(return_value=[(TEST_SKILL_KEY, TEST_CONTENT)]),
+            "app.api.v1.routers.agents.read_tools_content",
+            new=AsyncMock(return_value=[(TEST_FULL_TOOL_KEY, TEST_CONTENT)]),
         )
 
         # Create a nexus error response
@@ -376,7 +379,7 @@ class TestAgentConfigEndpoint:
             "message": "Failed to push agents",
             "data": {
                 "error": "Error pushing to Nexus",
-                "skills_processed": 1,
+                "tools_processed": 1,
             },
             "success": False,
             "code": "NEXUS_UPLOAD_ERROR",
@@ -407,39 +410,39 @@ class TestAgentConfigEndpoint:
         self, post_request_factory: Callable[[], Any], mock_auth_middleware: None, mocker: MockerFixture
     ) -> None:
         """Test final success message in streaming response."""
-        # Mock successful skill processing
+        # Mock successful tool processing
         process_response = {
-            "message": "Skill processed successfully",
+            "message": "Tool processed successfully",
             "data": {
-                "skill_name": TEST_SKILL,
-                "agent_name": TEST_AGENT,
+                "tool_key": TEST_TOOL_KEY,
+                "agent_key": TEST_AGENT_KEY,
                 "size_kb": 1.0,
                 "progress": 100,
             },
             "success": True,
-            "code": "SKILL_PROCESSED",
+            "code": "TOOL_PROCESSED",
         }
 
-        # Mock create_skill_zip to avoid zip file error
+        # Mock create_tool_zip to avoid zip file error
         mocker.patch(
-            "app.services.skill.packager.create_skill_zip",
+            "app.services.tool.packager.create_tool_zip",
             return_value=io.BytesIO(b"valid zip content"),
         )
 
-        # Mock process_skill to succeed
+        # Mock process_tool to succeed
         mocker.patch(
-            "app.services.skill.packager.process_skill",
+            "app.services.tool.packager.process_tool",
             new=AsyncMock(return_value=(process_response, io.BytesIO(b"processed content"))),
         )
 
-        # Mock extract_skill_files and read_skills_content to return test data
+        # Mock extract_tool_files and read_tools_content to return test data
         mocker.patch(
-            "app.api.v1.routers.agents.extract_skill_files",
-            new=AsyncMock(return_value={TEST_SKILL_KEY: mocker.Mock()}),
+            "app.api.v1.routers.agents.extract_tool_files",
+            new=AsyncMock(return_value={TEST_FULL_TOOL_KEY: mocker.Mock()}),
         )
         mocker.patch(
-            "app.api.v1.routers.agents.read_skills_content",
-            new=AsyncMock(return_value=[(TEST_SKILL_KEY, TEST_CONTENT)]),
+            "app.api.v1.routers.agents.read_tools_content",
+            new=AsyncMock(return_value=[(TEST_FULL_TOOL_KEY, TEST_CONTENT)]),
         )
 
         # Mock push_to_nexus to succeed
@@ -462,13 +465,13 @@ class TestAgentConfigEndpoint:
         assert final_message["success"] is True, "Final message should have success=True"
         assert final_message["code"] == "PROCESSING_COMPLETED", "Final message should have code=PROCESSING_COMPLETED"
 
-    def test_push_to_nexus_with_no_skills(
+    def test_push_to_nexus_with_no_tools(
         self, post_request_factory: Callable[[], Any], mock_auth_middleware: None, mocker: MockerFixture
     ) -> None:
-        """Test pushing to Nexus when there are no skills."""
-        # Mock extract_skill_files and read_skills_content to return empty results
-        mocker.patch("app.api.v1.routers.agents.extract_skill_files", new=AsyncMock(return_value={}))
-        mocker.patch("app.api.v1.routers.agents.read_skills_content", new=AsyncMock(return_value=[]))
+        """Test pushing to Nexus when there are no tools."""
+        # Mock extract_tool_files and read_tools_content to return empty results
+        mocker.patch("app.api.v1.routers.agents.extract_tool_files", new=AsyncMock(return_value={}))
+        mocker.patch("app.api.v1.routers.agents.read_tools_content", new=AsyncMock(return_value=[]))
 
         # Create a mock response object
         mock_response = mocker.MagicMock(spec=requests.Response)
@@ -503,34 +506,34 @@ class TestAgentConfigEndpoint:
             "Final message should have code=PROCESSING_COMPLETED"
         )
 
-    def test_process_skill_failure_stops_processing(
+    def test_process_tool_failure_stops_processing(
         self, post_request_factory: Callable[[], Any], mock_auth_middleware: None, mocker: MockerFixture
     ) -> None:
-        """Test that processing stops on skill processing failure."""
-        error_message = "Error processing skill"
+        """Test that processing stops on tool processing failure."""
+        error_message = "Error processing tool"
 
         # Create an error response
         error_response = {
             "message": error_message,
             "data": {},
             "success": False,
-            "code": "SKILL_PROCESSING_ERROR",
+            "code": "TOOL_PROCESSING_ERROR",
         }
 
-        # Setup mocks to simulate skill processing failure using mocker
+        # Setup mocks to simulate tool processing failure using mocker
         mocker.patch(
-            "app.api.v1.routers.agents.extract_skill_files",
-            new=AsyncMock(return_value={TEST_SKILL_KEY: mocker.Mock()}),
+            "app.api.v1.routers.agents.extract_tool_files",
+            new=AsyncMock(return_value={TEST_FULL_TOOL_KEY: mocker.Mock()}),
         )
         mocker.patch(
-            "app.api.v1.routers.agents.read_skills_content",
-            new=AsyncMock(return_value=[(TEST_SKILL_KEY, TEST_CONTENT)]),
+            "app.api.v1.routers.agents.read_tools_content",
+            new=AsyncMock(return_value=[(TEST_FULL_TOOL_KEY, TEST_CONTENT)]),
         )
-        mocker.patch("app.services.skill.packager.process_skill", new=AsyncMock(return_value=(error_response, None)))
+        mocker.patch("app.services.tool.packager.process_tool", new=AsyncMock(return_value=(error_response, None)))
 
         # Mock push_to_nexus to ensure it's not called
         def mock_push_to_nexus(*args: Any, **kwargs: Any) -> Any:
-            pytest.fail("push_to_nexus should not be called after skill processing failure")
+            pytest.fail("push_to_nexus should not be called after tool processing failure")
 
         mocker.patch("app.api.v1.routers.agents.push_to_nexus", mock_push_to_nexus)
 
@@ -552,42 +555,42 @@ class TestAgentConfigEndpoint:
 class TestHelperFunctions:
     """Tests for helper functions in agents.py."""
 
-    def test_extract_skill_files(self) -> None:
-        """Test extracting skill files from form data."""
+    def test_extract_tool_files(self) -> None:
+        """Test extracting tool files from form data."""
         import asyncio
 
-        from app.api.v1.routers.agents import extract_skill_files
+        from app.api.v1.routers.agents import extract_tool_files
 
         mock_file = UploadFile(filename="test.zip", file=io.BytesIO(TEST_CONTENT))
         mock_form = {
             "project_uuid": "test-uuid",  # Not a file
             "definition": "{}",  # Not a file
-            TEST_SKILL_KEY: mock_file,  # Valid
+            TEST_FULL_TOOL_KEY: mock_file,  # Valid
             "invalid-key": mock_file,  # Invalid (no colon)
         }
 
-        result = asyncio.run(extract_skill_files(mock_form))
+        result = asyncio.run(extract_tool_files(mock_form))
         assert len(result) == 1, "Should extract one file"
-        assert TEST_SKILL_KEY in result, "Should extract valid file"
+        assert TEST_FULL_TOOL_KEY in result, "Should extract valid file"
         assert "invalid-key" not in result, "Should ignore invalid keys"
 
-    def test_read_skills_content(self) -> None:
-        """Test reading content from skill files."""
+    def test_read_tools_content(self) -> None:
+        """Test reading content from tool files."""
         import asyncio
 
-        from app.api.v1.routers.agents import read_skills_content
+        from app.api.v1.routers.agents import read_tools_content
 
         file1 = UploadFile(filename="test1.zip", file=io.BytesIO(b"content1"))
         file2 = UploadFile(filename="test2.zip", file=io.BytesIO(b"content2"))
-        skills_folders_zips = {"agent1:skill1": file1, "agent2:skill2": file2}
+        tools_folders_zips = {"agent1:tool1": file1, "agent2:tool2": file2}
 
         # Define constant for expected number of files
         expected_file_count = 2
 
-        result = asyncio.run(read_skills_content(skills_folders_zips))
+        result = asyncio.run(read_tools_content(tools_folders_zips))
         assert len(result) == expected_file_count, "Should read two files"
-        assert result[0][0] == "agent1:skill1" and result[0][1] == b"content1", "First content should match"
-        assert result[1][0] == "agent2:skill2" and result[1][1] == b"content2", "Second content should match"
+        assert result[0][0] == "agent1:tool1" and result[0][1] == b"content1", "First content should match"
+        assert result[1][0] == "agent2:tool2" and result[1][1] == b"content2", "Second content should match"
 
 
 class TestPushToNexus:
@@ -595,8 +598,8 @@ class TestPushToNexus:
 
     # Common test data
     project_uuid: ClassVar[str] = str(uuid4())
-    definition: ClassVar[dict[str, Any]] = {"agents": {TEST_AGENT: {"skills": []}}}
-    skill_mapping: ClassVar[dict[str, Any]] = {TEST_SKILL_KEY: io.BytesIO(b"skill content")}
+    definition: ClassVar[dict[str, Any]] = {"agents": {TEST_AGENT: {"tools": []}}}
+    tool_mapping: ClassVar[dict[str, Any]] = {TEST_FULL_TOOL_KEY: io.BytesIO(b"tool content")}
     request_id: ClassVar[str] = str(uuid4())
     authorization: ClassVar[str] = TEST_TOKEN
 
@@ -609,7 +612,7 @@ class TestPushToNexus:
         mock_response.status_code = status.HTTP_200_OK
         mock_response.text = "Success"
 
-        # Create a mock NexusClient instance
+                # Create a mock NexusClient instance
         mock_nexus_client = mocker.MagicMock()
         mock_nexus_client.push_agents.return_value = mock_response
 
@@ -617,7 +620,7 @@ class TestPushToNexus:
         mocker.patch("app.api.v1.routers.agents.NexusClient", return_value=mock_nexus_client)
 
         success, response = push_to_nexus(
-            self.project_uuid, self.definition, self.skill_mapping, self.request_id, self.authorization
+            self.project_uuid, self.definition, self.tool_mapping, self.request_id, self.authorization
         )
 
         assert success is True, "Should report success"
@@ -635,7 +638,7 @@ class TestPushToNexus:
         mocker.patch("app.api.v1.routers.agents.NexusClient", return_value=mock_nexus_client)
 
         success, response = push_to_nexus(
-            self.project_uuid, self.definition, self.skill_mapping, self.request_id, self.authorization
+            self.project_uuid, self.definition, self.tool_mapping, self.request_id, self.authorization
         )
 
         assert success is False, "Should report failure"
@@ -671,7 +674,7 @@ class TestPushToNexus:
         mocker.patch("app.api.v1.routers.agents.NexusClient", return_value=mock_nexus_client)
 
         success, response = push_to_nexus(
-            self.project_uuid, self.definition, self.skill_mapping, self.request_id, self.authorization
+            self.project_uuid, self.definition, self.tool_mapping, self.request_id, self.authorization
         )
 
         assert success is False, f"Should report failure when status code is {status_code}"

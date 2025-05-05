@@ -14,7 +14,7 @@ from starlette.datastructures import UploadFile
 from app.api.v1.models.requests import BaseRequestModel
 from app.clients.nexus_client import NexusClient
 from app.core.response import CLIResponse, send_response
-from app.services.skill.packager import process_skill
+from app.services.tool.packager import process_tool
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -27,12 +27,12 @@ async def configure_agents(
     authorization: Annotated[str, Header()],
 ) -> StreamingResponse:
     """
-    Upload multiple files for skill processing.
+    Upload multiple files for tool processing.
 
     Args:
         request: FastAPI request object to access form data and files
         project_uuid: UUID of the project
-        definition: JSON containing agent definitions
+        definition: JSON containing tool definitions
         authorization: Authorization header for Nexus API calls
 
     Returns:
@@ -45,14 +45,14 @@ async def configure_agents(
     # Access the form data with files
     form = await request.form()
 
-    # Extract and process skill files
-    skills_folders_zips = await extract_skill_files(form)
-    skill_count = len(skills_folders_zips)
-    logger.info(f"Found {skill_count} skill folders to process for project {data.project_uuid}")
-    logger.debug(f"Skill keys: {list(skills_folders_zips.keys())}")
+    # Extract and process tool files
+    tools_folders_zips = await extract_tool_files(form)
+    tool_count = len(tools_folders_zips)
+    logger.info(f"Found {tool_count} tool folders to process for project {data.project_uuid}")
+    logger.debug(f"Tool keys: {list(tools_folders_zips.keys())}")
 
     # Create file names list for streaming
-    skills_folders_zips_entries = await read_skills_content(skills_folders_zips)
+    tools_folders_zips_entries = await read_tools_content(tools_folders_zips)
 
     # Async generator for streaming responses
     async def response_stream() -> AsyncIterator[bytes]:
@@ -62,54 +62,54 @@ async def configure_agents(
                 "message": "Processing agents...",
                 "data": {
                     "project_uuid": str(data.project_uuid),
-                    "total_files": skill_count,
+                    "total_files": tool_count,
                 },
                 "success": True,
                 "progress": 0.01,
                 "code": "PROCESSING_STARTED",
             }
-            logger.info(f"Starting processing for {skill_count} skills")
+            logger.info(f"Starting processing for {tool_count} tools")
             yield send_response(initial_data, request_id=request_id)
 
-            skill_mapping = {}
+            tool_mapping = {}
             processed_count = 0
 
-            # Process each skill file
-            for key, folder_zip in skills_folders_zips_entries:
-                agent_slug, skill_slug = key.split(":")
+            # Process each tool file
+            for key, folder_zip in tools_folders_zips_entries:
+                agent_key, tool_key = key.split(":")
                 processed_count += 1
 
-                # Process the skill
-                response, skill_zip_bytes = await process_skill(
+                # Process the tool
+                response, tool_zip_bytes = await process_tool(
                     folder_zip,
                     key,
                     str(data.project_uuid),
-                    agent_slug,
-                    skill_slug,
+                    agent_key,
+                    tool_key,
                     data.definition,
                     processed_count,
-                    skill_count,
+                    tool_count,
                     data.toolkit_version,
                 )
 
-                # Send response for this skill
+                # Send response for this tool
                 yield send_response(response, request_id=request_id)
 
-                # If skill processing failed, stop and raise an exception
-                if not skill_zip_bytes:
+                # If tool processing failed, stop and raise an exception
+                if not tool_zip_bytes:
                     response_data: dict = response.get("data") or {}
-                    error_message = response_data.get("error", "Unknown error processing skill")
-                    raise Exception(f"Failed to process skill {key}: {error_message}")
+                    error_message = response_data.get("error", "Unknown error processing tool")
+                    raise Exception(f"Failed to process tool {key}: {error_message}")
 
                 # Add to mapping if successful (we'll only get here if processing succeeded)
-                skill_mapping[key] = skill_zip_bytes
+                tool_mapping[key] = tool_zip_bytes
 
             # Send progress update for Nexus upload
             nexus_response: CLIResponse = {
                 "message": "Updating your agents...",
                 "data": {
                     "project_uuid": str(data.project_uuid),
-                    "skill_count": len(skill_mapping),
+                    "tool_count": len(tool_mapping),
                 },
                 "success": True,
                 "code": "NEXUS_UPLOAD_STARTED",
@@ -117,9 +117,9 @@ async def configure_agents(
             }
             yield send_response(nexus_response, request_id=request_id)
 
-            # Push to Nexus - always push, even if no skills
+            # Push to Nexus - always push, even if no tools
             success, error_response = push_to_nexus(
-                str(data.project_uuid), data.definition, skill_mapping, request_id, authorization
+                str(data.project_uuid), data.definition, tool_mapping, request_id, authorization
             )
 
             if not success and error_response is not None:
@@ -136,8 +136,8 @@ async def configure_agents(
                 "message": "Agents processed successfully",
                 "data": {
                     "project_uuid": str(data.project_uuid),
-                    "total_files": skill_count,
-                    "processed_files": len(skill_mapping),
+                    "total_files": tool_count,
+                    "processed_files": len(tool_mapping),
                     "status": "completed",
                 },
                 "success": True,
@@ -164,51 +164,51 @@ async def configure_agents(
 
 
 # Utility functions below this point
-async def extract_skill_files(form: Any) -> dict[str, UploadFile]:
+async def extract_tool_files(form: Any) -> dict[str, UploadFile]:
     """
-    Extract skill files from form data.
+    Extract tool files from form data.
 
     Args:
         form: The form data containing files (FormData from FastAPI)
 
     Returns:
-        Dictionary of agent:skill keys to UploadFile objects
+        Dictionary of agent:tool keys to UploadFile objects
     """
-    skills_folders_zips = {}
+    tools_folders_zips = {}
     for key, value in form.items():
         if isinstance(value, UploadFile) and ":" in key:
-            skills_folders_zips[key] = value
+            tools_folders_zips[key] = value
 
-    return skills_folders_zips
+    return tools_folders_zips
 
 
-async def read_skills_content(skills_folders_zips: dict[str, UploadFile]) -> list[tuple[str, bytes]]:
+async def read_tools_content(tools_folders_zips: dict[str, UploadFile]) -> list[tuple[str, bytes]]:
     """
-    Read the content of each skill file.
+    Read the content of each tool file.
 
     Args:
-        skills_folders_zips: Dictionary of skill keys to file objects
+        tools_folders_zips: Dictionary of tool keys to file objects
 
     Returns:
         List of tuples containing (key, file_content)
     """
-    return [(key, await file.read()) for key, file in skills_folders_zips.items()]
+    return [(key, await file.read()) for key, file in tools_folders_zips.items()]
 
 
 def push_to_nexus(
     project_uuid: str,
     definition: dict[str, Any],
-    skill_mapping: dict[str, Any],
+    tool_mapping: dict[str, Any],
     request_id: str,
     authorization: str,
 ) -> tuple[bool, CLIResponse | None]:
     """
-    Push processed skills to Nexus.
+    Push processed tools to Nexus.
 
     Args:
         project_uuid: The UUID of the project
         definition: The agent definition
-        skill_mapping: Dictionary of processed skills
+        tool_mapping: Dictionary of processed tools
         request_id: The request ID for correlation
         authorization: The authorization header value
 
@@ -216,15 +216,15 @@ def push_to_nexus(
         Tuple of (success, response)
     """
     try:
-        logger.info(f"Sending {len(skill_mapping)} processed skills to Nexus for project {project_uuid}")
+        logger.info(f"Sending {len(tool_mapping)} processed tools to Nexus for project {project_uuid}")
         nexus_client = NexusClient(authorization, str(project_uuid))
 
         # We need to change the entrypoint to the lambda function we've created
         for _, agent_data in definition["agents"].items():
-            for skill in agent_data["skills"]:
-                skill["source"]["entrypoint"] = "lambda_function.lambda_handler"
+            for tool in agent_data["tools"]:
+                tool["source"]["entrypoint"] = "lambda_function.lambda_handler"
 
-        response = nexus_client.push_agents(definition, skill_mapping)
+        response = nexus_client.push_agents(definition, tool_mapping)
 
         if response.status_code != status.HTTP_200_OK:
             raise Exception(f"Failed to push agents: {response.status_code} {response.text}")
@@ -240,7 +240,7 @@ def push_to_nexus(
             "data": {
                 "project_uuid": str(project_uuid),
                 "error": str(e),
-                "skills_processed": len(skill_mapping),
+                "tools_processed": len(tool_mapping),
             },
             "success": False,
             "code": "NEXUS_UPLOAD_ERROR",
