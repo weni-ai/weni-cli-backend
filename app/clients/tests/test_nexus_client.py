@@ -19,9 +19,9 @@ def auth_token() -> str:
 
 
 @pytest.fixture
-def nexus_client(auth_token: str) -> NexusClient:
+def nexus_client(auth_token: str, project_uuid: str) -> NexusClient:
     """Return a NexusClient instance."""
-    return NexusClient(auth_token)
+    return NexusClient(auth_token, project_uuid)
 
 
 @pytest.fixture
@@ -72,9 +72,9 @@ def tool_files() -> dict:
 class TestNexusClient:
     """Tests for the NexusClient class."""
 
-    def test_init(self, auth_token: str) -> None:
+    def test_init(self, auth_token: str, project_uuid: str) -> None:
         """Test initialization of NexusClient."""
-        client = NexusClient(auth_token)
+        client = NexusClient(auth_token, project_uuid)
 
         assert client.headers == {"Authorization": auth_token}
         assert client.base_url == settings.NEXUS_BASE_URL
@@ -93,7 +93,7 @@ class TestNexusClient:
         requests_mock.post(expected_url, json={"success": True}, status_code=status.HTTP_200_OK)
 
         # Call the method
-        response = nexus_client.push_agents(project_uuid, agents_definition, tool_files)
+        response = nexus_client.push_agents(agents_definition, tool_files)
 
         # Assertions
         assert response.status_code == status.HTTP_200_OK
@@ -129,7 +129,7 @@ class TestNexusClient:
         requests_mock.post(expected_url, json={"error": "Bad request"}, status_code=status.HTTP_400_BAD_REQUEST)
 
         # Call the method
-        response = nexus_client.push_agents(project_uuid, agents_definition, tool_files)
+        response = nexus_client.push_agents(agents_definition, tool_files)
 
         # Assertions
         assert response.status_code == status.HTTP_400_BAD_REQUEST
