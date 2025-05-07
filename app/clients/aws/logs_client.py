@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class AWSLogsClient:
     def __init__(self) -> None:
-        self.client = boto3.client("logs", region_name=settings.AWS_REGION)
+        self.client = boto3.client("logs", region_name=settings.AWS_REGION_NAME)
 
     # Convert a datetime to milliseconds
     # preserving the timezone or using UTC+0 if no timezone is present

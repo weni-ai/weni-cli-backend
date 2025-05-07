@@ -22,7 +22,7 @@ class LambdaFunction(BaseModel):
 
 class AWSLambdaClient:
     def __init__(self) -> None:
-        self.client = boto3.client("lambda", region_name=settings.AWS_REGION)
+        self.client = boto3.client("lambda", region_name=settings.AWS_REGION_NAME)
 
     def get_function(self, function_arn: str) -> LambdaFunction:
         """
