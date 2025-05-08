@@ -3,6 +3,7 @@ Tool Logs endpoints
 """
 
 import json
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Header, Query, status
@@ -11,6 +12,8 @@ from fastapi.responses import JSONResponse
 from app.api.v1.models.requests import GetLogsRequestModel
 from app.clients.aws.logs_client import AWSLogsClient
 from app.clients.nexus_client import NexusClient
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -36,7 +39,8 @@ async def get_logs(
 
     try:
         log_group_arn = log_group_data["log_group"]["log_group_arn"]
-    except KeyError:
+    except Exception as e:
+        logger.error(f"Error getting log group ARN: {e}")
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content={"status": "error", "message": "Log group not found in Nexus response"},
