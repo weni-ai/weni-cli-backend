@@ -16,14 +16,8 @@ from uuid import uuid4
 import pytest
 from pytest_mock import MockerFixture
 
-from app.services.tool.packager import (
-    SUBPROCESS_TIMEOUT_SECONDS,
-    Package,
-    build_lambda_function_file,
-    create_tool_zip,
-    install_dependencies,
-    install_packages,
-)
+from app.services.package import SUBPROCESS_TIMEOUT_SECONDS, Package, Packager
+from app.services.tool.packager import create_tool_zip
 
 # Common test constants
 TEST_CONTENT = b"test content"
@@ -73,10 +67,16 @@ def tool_folder_zip() -> BytesIO:
     return buffer
 
 
+@pytest.fixture
+def packager(temp_dir: Path) -> Packager:
+    """Creates a packager for testing."""
+    return Packager(temp_dir)
+
+
 class TestInstallToolkit:
     """Tests for the install_packages function."""
 
-    def test_successful_installation(self, temp_dir: Path, mocker: MockerFixture) -> None:
+    def test_successful_installation(self, packager: Packager, mocker: MockerFixture) -> None:
         """Test successful toolkit installation."""
         # Mock subprocess.run to avoid actual installation
         mock_process = mocker.Mock()
@@ -85,9 +85,8 @@ class TestInstallToolkit:
         mocker.patch("subprocess.run", mock_run)
 
         packages = [Package("weni-agents-toolkit", "1.0.0")]
-
         # Call the function
-        install_packages(temp_dir, packages)
+        packager.install_packages(packages)
 
         # Verify subprocess.run was called with correct arguments
         mock_run.assert_called_once()
@@ -100,7 +99,7 @@ class TestInstallToolkit:
         timeout_arg = mock_run.call_args[1].get("timeout")
         assert timeout_arg == SUBPROCESS_TIMEOUT_SECONDS, "Should set timeout"
 
-    def test_installation_failure(self, temp_dir: Path, mocker: MockerFixture) -> None:
+    def test_installation_failure(self, packager: Packager, mocker: MockerFixture) -> None:
         """Test toolkit installation failure."""
         # Mock subprocess.run to raise CalledProcessError
         error = subprocess.CalledProcessError(1, ["pip", "install"], stderr="Could not find package")
@@ -111,11 +110,11 @@ class TestInstallToolkit:
 
         # Verify function raises ValueError
         with pytest.raises(ValueError) as exc_info:
-            install_packages(temp_dir, packages)
+            packager.install_packages(packages)
         assert "Failed to install toolkit" in str(exc_info.value), "Error message should be descriptive"
         assert "Could not find package" in str(exc_info.value), "Should include the subprocess error"
 
-    def test_installation_timeout(self, temp_dir: Path, mocker: MockerFixture) -> None:
+    def test_installation_timeout(self, packager: Packager, mocker: MockerFixture) -> None:
         """Test toolkit installation timeout."""
         # Mock subprocess.run to raise TimeoutExpired
         error = subprocess.TimeoutExpired(["pip", "install"], SUBPROCESS_TIMEOUT_SECONDS)
@@ -126,7 +125,7 @@ class TestInstallToolkit:
 
         # Verify function raises ValueError
         with pytest.raises(ValueError) as exc_info:
-            install_packages(temp_dir, packages)
+            packager.install_packages(packages)
         assert "Timeout installing toolkit" in str(exc_info.value), "Error should mention timeout"
         assert str(SUBPROCESS_TIMEOUT_SECONDS) in str(exc_info.value), "Should include timeout duration"
 
@@ -135,23 +134,18 @@ class TestInstallDependencies:
     """Tests for the install_dependencies function."""
 
     @pytest.fixture
-    def temp_dir(self) -> Generator[Path, None, None]:
-        """Create temporary directory for testing."""
-        with TemporaryDirectory() as temp_dir_path:
-            yield Path(temp_dir_path)
-
-    @pytest.fixture
-    def requirements_file(self) -> Generator[Path, None, None]:
-        """Create temporary requirements file for testing."""
-        with NamedTemporaryFile(delete=False, suffix=".txt") as temp_file:
-            temp_file.write(b"pytest==7.3.1\nrequests==2.31.0\n")
+    def requirements_file(self, packager: Packager) -> Generator[Path, None, None]:
+        """Create temporary requirements file inside the packager's directory."""
+        requirements_path = packager.package_dir / "requirements.txt"
+        with open(requirements_path, "wb") as temp_file:
+            temp_file.write(b"pytest==7.3.1\\nrequests==2.31.0\\n")
             temp_file.flush()
-            yield Path(temp_file.name)
-            # Clean up after test
-            if os.path.exists(temp_file.name):
-                os.unlink(temp_file.name)
+        yield requirements_path
+        # Clean up after test
+        if requirements_path.exists():
+            os.unlink(requirements_path)
 
-    def test_successful_installation(self, temp_dir: Path, requirements_file: Path, mocker: MockerFixture) -> None:
+    def test_successful_installation(self, packager: Packager, requirements_file: Path, mocker: MockerFixture) -> None:
         """Test successful dependency installation."""
         # Mock subprocess.run to avoid actual installation
         mock_process = mocker.Mock()
@@ -160,7 +154,7 @@ class TestInstallDependencies:
         mocker.patch("subprocess.run", mock_run)
 
         # Call the function
-        install_dependencies(temp_dir, requirements_file, "test-tool", "1.0.0")
+        packager.install_dependencies(requirements_file, "test-tool")
 
         # Verify subprocess.run was called with correct arguments - now called once for regular dependencies
         mock_run.assert_called_once()
@@ -173,7 +167,7 @@ class TestInstallDependencies:
         timeout_arg = mock_run.call_args[1].get("timeout")
         assert timeout_arg == SUBPROCESS_TIMEOUT_SECONDS, "Should set timeout"
 
-    def test_installation_failure(self, temp_dir: Path, requirements_file: Path, mocker: MockerFixture) -> None:
+    def test_installation_failure(self, packager: Packager, requirements_file: Path, mocker: MockerFixture) -> None:
         """Test dependency installation failure."""
         # Mock subprocess.run to raise CalledProcessError
         error = subprocess.CalledProcessError(1, ["pip", "install"], stderr="Could not find package")
@@ -182,11 +176,11 @@ class TestInstallDependencies:
 
         # Verify function raises ValueError
         with pytest.raises(ValueError) as exc_info:
-            install_dependencies(temp_dir, requirements_file, "test-tool", "1.0.0")
+            packager.install_dependencies(requirements_file, "test-tool")
         assert "Failed to install requirements" in str(exc_info.value), "Error message should be descriptive"
         assert "Could not find package" in str(exc_info.value), "Should include the subprocess error"
 
-    def test_installation_timeout(self, temp_dir: Path, requirements_file: Path, mocker: MockerFixture) -> None:
+    def test_installation_timeout(self, packager: Packager, requirements_file: Path, mocker: MockerFixture) -> None:
         """Test dependency installation timeout."""
         # Mock subprocess.run to raise TimeoutExpired
         error = subprocess.TimeoutExpired(["pip", "install"], SUBPROCESS_TIMEOUT_SECONDS)
@@ -195,7 +189,7 @@ class TestInstallDependencies:
 
         # Verify function raises ValueError
         with pytest.raises(ValueError) as exc_info:
-            install_dependencies(temp_dir, requirements_file, "test-tool", "1.0.0")
+            packager.install_dependencies(requirements_file, "test-tool")
         assert "Timeout installing requirements" in str(exc_info.value), "Error should mention timeout"
         assert str(SUBPROCESS_TIMEOUT_SECONDS) in str(exc_info.value), "Should include timeout duration"
 
@@ -203,40 +197,59 @@ class TestInstallDependencies:
 class TestBuildLambdaFunctionFile:
     """Tests for the build_lambda_function_file function."""
 
-    def test_successful_template_creation(self) -> None:
+    def test_successful_template_creation(self, packager: Packager) -> None:
         """Test successful Lambda function template creation."""
         module_name = "tool_module"
         class_name = "ToolHandler"
 
         # Call the function
-        result = build_lambda_function_file(module_name, class_name)
+        template_path = Path(__file__).parent / "templates" / "test_lambda_function.py.template"
+        replacements = {
+            "module": module_name,
+            "class_name": class_name,
+        }
+        result = packager.build_lambda_function_file(template_path, replacements)
 
         # Verify specific content is correctly substituted
         assert "import json" in result
         assert "from weni.context import Context" in result
-        assert "from tool.tool_module import ToolHandler" in result
+        assert f"from tool.{module_name} import {class_name}" in result
         assert "def lambda_handler(event, context):" in result
-        assert "result, format = ToolHandler(context)" in result
+        assert f"result, format = {class_name}(context)" in result
         assert "dummy_function_response = {'response': action_response, 'messageVersion': '1.0'}" in result
         assert "sentry_sdk.init(" in result
 
-    def test_template_substitution(self) -> None:
+    def test_template_substitution(self, packager: Packager) -> None:
         """Test template variable substitution with different values."""
-        result = build_lambda_function_file("custom_module", "CustomClass")
+        # Call the function
+        module_name = "custom_module"
+        class_name = "CustomClass"
 
-        assert "from tool.custom_module import CustomClass" in result
-        assert "result, format = CustomClass(context)" in result
+        template_path = Path(__file__).parent / "templates" / "test_lambda_function.py.template"
+        replacements = {
+            "module": module_name,
+            "class_name": class_name,
+        }
+        result = packager.build_lambda_function_file(template_path, replacements)
+
+        assert f"from tool.{module_name} import {class_name}" in result
+        assert f"result, format = {class_name}(context)" in result
         # Ensure other parts of the template are intact
         assert "json.loads(session_attributes.get('credentials'))" in result
         assert "promptSessionAttributes" in result
 
-    def test_template_not_found(self, mocker: MockerFixture) -> None:
+    def test_template_not_found(self, mocker: MockerFixture, packager: Packager) -> None:
         """Test behavior when template file is not found."""
         # Make open raise FileNotFoundError
         mocker.patch("builtins.open", side_effect=FileNotFoundError("Template not found"))
 
         with pytest.raises(FileNotFoundError):
-            build_lambda_function_file("module", "Class")
+            template_path = Path(__file__).parent / "templates" / "non_existent.py.template"
+            replacements = {
+                "module": "custom_module",
+                "class_name": "CustomClass",
+            }
+            packager.build_lambda_function_file(template_path, replacements)
 
 
 class TestCreateToolZip:
@@ -258,14 +271,14 @@ class TestCreateToolZip:
         mocker.patch("app.services.tool.packager.validate_requirements_file", return_value=(True, ""))
 
         # Mock toolkit installation
-        mock_install_packages = mocker.patch("app.services.tool.packager.install_packages")
+        mock_install_packages = mocker.patch("app.services.package.Packager.install_packages")
 
         # Mock dependencies installation
-        mock_install_dependencies = mocker.patch("app.services.tool.packager.install_dependencies")
+        mock_install_dependencies = mocker.patch("app.services.package.Packager.install_dependencies")
 
         # Mock lambda function file creation
         mocker.patch(
-            "app.services.tool.packager.build_lambda_function_file",
+            "app.services.package.Packager.build_lambda_function_file",
             return_value="def lambda_handler(event, context): pass",
         )
 
@@ -289,7 +302,7 @@ class TestCreateToolZip:
     def test_invalid_requirements(self, tool_folder_zip: BytesIO, mocker: MockerFixture) -> None:
         """Test zip creation with invalid requirements."""
         # Mock toolkit installation
-        mocker.patch("app.services.tool.packager.install_packages")
+        mocker.patch("app.services.package.Packager.install_packages")
 
         # Mock validation to return failure
         mocker.patch(
@@ -306,13 +319,15 @@ class TestCreateToolZip:
     def test_installation_error(self, tool_folder_zip: BytesIO, mocker: MockerFixture) -> None:
         """Test zip creation with dependency installation error."""
         # Mock toolkit installation
-        mocker.patch("app.services.tool.packager.install_packages")
+        mocker.patch("app.services.package.Packager.install_packages")
 
         # Mock validation to return success
         mocker.patch("app.services.tool.packager.validate_requirements_file", return_value=(True, ""))
 
         # Mock install_dependencies to raise ValueError
-        mocker.patch("app.services.tool.packager.install_dependencies", side_effect=ValueError("Installation failed"))
+        mocker.patch(
+            "app.services.package.Packager.install_dependencies", side_effect=ValueError("Installation failed")
+        )
 
         # Verify function raises ValueError
         with pytest.raises(ValueError) as exc_info:
@@ -325,7 +340,7 @@ class TestCreateToolZip:
         """Test zip creation with toolkit installation error."""
         # Mock install_packages to raise ValueError
         mocker.patch(
-            "app.services.tool.packager.install_packages", side_effect=ValueError("Toolkit installation failed")
+            "app.services.package.Packager.install_packages", side_effect=ValueError("Toolkit installation failed")
         )
 
         # Verify function raises ValueError
@@ -352,23 +367,21 @@ class TestCreateToolZip:
             zip_file.writestr("tool.py", "class ToolHandler: pass")
 
         # Mock toolkit installation
-        mock_install_packages = mocker.patch("app.services.tool.packager.install_packages")
+        mock_install_packages = mocker.patch("app.services.package.Packager.install_packages")
 
         # Mock dependencies installation - should NOT be called
-        mock_install_dependencies = mocker.patch("app.services.tool.packager.install_dependencies")
+        mock_install_dependencies = mocker.patch("app.services.package.Packager.install_dependencies")
 
         # Mock lambda function file creation
         mocker.patch(
-            "app.services.tool.packager.build_lambda_function_file",
+            "app.services.package.Packager.build_lambda_function_file",
             return_value="def lambda_handler(event, context): pass",
         )
 
         buffer.seek(0)
 
         # Call the function with toolkit_version parameter
-        result = create_tool_zip(
-            buffer.getvalue(), "test-tool", "project-123", "tool_module", "ToolHandler", "1.0.0"
-        )
+        result = create_tool_zip(buffer.getvalue(), "test-tool", "project-123", "tool_module", "ToolHandler", "1.0.0")
 
         # Verify result
         assert result is not None, "Should return a file-like object"
@@ -504,7 +517,7 @@ class TestProcessTool:
         """Test various error scenarios in tool processing."""
         import asyncio
 
-        from app.api.v1.routers.agents import process_tool
+        from app.services.tool.packager import process_tool
 
         with pytest.MonkeyPatch().context() as mp:
             if scenario == "exception":

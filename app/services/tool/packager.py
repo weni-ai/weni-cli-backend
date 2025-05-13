@@ -5,132 +5,18 @@ Utilities for packaging tools into deployable zip files.
 import logging
 import os
 import shutil
-import subprocess
 import tempfile
 import zipfile
-from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from app.core.config import settings
 from app.core.response import CLIResponse
+from app.services.package import Package, Packager
 from app.services.tool.validator import validate_requirements_file
 
 # Constants
-SUBPROCESS_TIMEOUT_SECONDS = 120
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class Package:
-    name: str
-    version: str | None = None
-
-    def to_str(self) -> str:
-        if self.version:
-            return f"{self.name}=={self.version}"
-        return self.name
-
-
-def install_packages(package_dir: Path, packages: list[Package]) -> None:
-    packages_list = [package.to_str() for package in packages]
-
-    try:
-        process = subprocess.run(
-            [
-                "pip",
-                "install",
-                "--target",
-                str(package_dir),
-                *packages_list,
-                "--disable-pip-version-check",
-                "--no-cache-dir",
-                "--isolated",  # Isolated mode
-            ],
-            capture_output=True,
-            text=True,
-            timeout=SUBPROCESS_TIMEOUT_SECONDS,
-            check=True,
-        )
-
-        logger.debug(f"Toolkit installation output: {process.stdout}")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to install toolkit: {e.stderr}")
-        raise ValueError(f"Failed to install toolkit: {e.stderr}") from e
-    except subprocess.TimeoutExpired as e:
-        logger.error(f"Timeout installing toolkit: {e}")
-        raise ValueError(f"Timeout installing toolkit (>{SUBPROCESS_TIMEOUT_SECONDS}s)") from e
-
-
-def install_dependencies(package_dir: Path, requirements_path: Path, tool_key: str, toolkit_version: str) -> None:
-    """
-    Install Python dependencies from requirements.txt into a target directory.
-
-    Args:
-        package_dir: Directory where packages will be installed
-        requirements_path: Path to the requirements.txt file
-        tool_key: Identifier for the tool (used for logging)
-        toolkit_version: The version of the toolkit
-    Raises:
-        ValueError: If installation fails or times out
-    """
-    logger.info(f"Installing dependencies for {tool_key}")
-
-    try:
-        process = subprocess.run(
-            [
-                "pip",
-                "install",
-                "--target",
-                str(package_dir),
-                "-r",
-                str(requirements_path),
-                "--disable-pip-version-check",
-                "--no-cache-dir",
-                "--isolated",  # Isolated mode
-            ],
-            capture_output=True,
-            text=True,
-            timeout=SUBPROCESS_TIMEOUT_SECONDS,
-            check=True,
-        )
-
-        logger.debug(f"Dependency installation output: {process.stdout}")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to install requirements: {e.stderr}")
-        raise ValueError(f"Failed to install requirements: {e.stderr}") from e
-    except subprocess.TimeoutExpired as e:
-        logger.error(f"Timeout installing requirements for {tool_key}")
-        raise ValueError(f"Timeout installing requirements (>{SUBPROCESS_TIMEOUT_SECONDS}s)") from e
-
-
-def build_lambda_function_file(tool_entrypoint_module: str, tool_entrypoint_class: str) -> str:
-    """
-    Build a Lambda function file from a template.
-
-    Args:
-        tool_entrypoint_module: The module name containing the entrypoint
-        tool_entrypoint_class: The class name to use as entrypoint
-
-    Returns:
-        The contents of the Lambda function file
-    """
-    template_path = Path(__file__).parent / "templates" / "lambda_function.py.template"
-
-    with open(template_path) as template_file:
-        template_content = template_file.read()
-
-    # Escape literal curly braces in the template by doubling them
-    template_content = template_content.replace("{", "{{").replace("}", "}}")
-
-    # Un-escape the placeholders we want to replace
-    template_content = template_content.replace("{{module}}", "{module}").replace("{{class_name}}", "{class_name}")
-
-    template_content = template_content.replace("{{sentry_dsn}}", settings.FUNCTION_SENTRY_DSN)
-
-    # Replace placeholders in the template
-    return template_content.format(module=tool_entrypoint_module, class_name=tool_entrypoint_class)
 
 
 def create_tool_zip(  # noqa: PLR0913, PLR0915
@@ -189,7 +75,8 @@ def create_tool_zip(  # noqa: PLR0913, PLR0915
             Package("sentry-sdk", "2.24.1"),
         ]
 
-        install_packages(package_dir, default_packages)
+        packager = Packager(package_dir)
+        packager.install_packages(default_packages)
 
         # Check for requirements.txt
         requirements_path = temp_path / "requirements.txt"
@@ -203,11 +90,16 @@ def create_tool_zip(  # noqa: PLR0913, PLR0915
                 raise ValueError(f"Invalid requirements.txt: {error_message}")
 
             # Install dependencies
-            install_dependencies(package_dir, requirements_path, tool_key, toolkit_version)
+            packager.install_dependencies(requirements_path, tool_key)
 
         # Create the lambda function file
         logger.info(f"Creating Lambda function for {tool_key}")
-        lambda_function_content = build_lambda_function_file(tool_entrypoint_module, tool_entrypoint_class)
+        replacements = {
+            "module": tool_entrypoint_module,
+            "class_name": tool_entrypoint_class,
+        }
+        template_path = Path(__file__).parent / "templates" / "lambda_function.py.template"
+        lambda_function_content = packager.build_lambda_function_file(template_path, replacements)
         lambda_function_path = temp_path / "lambda_function.py"
         with open(lambda_function_path, "w") as f:
             f.write(lambda_function_content)
