@@ -1,0 +1,110 @@
+import sentry_sdk
+from sentry_sdk.integrations.aws_lambda import AwsLambdaIntegration
+
+sentry_sdk.init(
+    dsn="{sentry_dsn}",
+    integrations=[AwsLambdaIntegration()],
+    traces_sample_rate=1.0,
+)
+
+
+import json
+
+from weni.context import PreProcessContext
+from preprocessor.{preprocessor_module} import {preprocessor_class}
+{official_rules_imports}
+
+
+def select_template_official_rules(data, rules, template_map, ignored_rules):
+    for rule in rules:
+        if rule.__class__.__name__ in ignored_rules:
+            continue
+
+        if rule.execute(data=data):
+            return template_map[rule.__class__.__name__], rule.get_template_variables(data=data)
+
+    return None, None
+
+
+def select_template_project_rules(data, rules):
+    for rule in rules:
+        rule_instance = rule["instance"]
+        if rule_instance.execute(data=data):
+            return rule.get("template"), rule_instance.get_template_variables(data=data)
+
+    return None, None
+
+
+def json_load_field(field, default_value):
+    value = default_value
+    try:
+        value = json.loads(field)
+    except:
+        value = default_value
+    
+    return value
+
+
+def get_rule_class(scope):
+    import inspect
+    for key, value in scope.items():
+        if inspect.isclass(value) and issubclass(value, Rule):
+            return key
+
+
+def initialize_rule(rule):
+    exec(rule.get("source"))
+    rule_class = get_rule_class(locals())
+    instance = locals()[rule_class]()
+    return instance
+
+
+def lambda_handler(event, context):
+    payload = event.get("payload")
+    params = event.get("params")
+    credentials = event.get("credentials") # TODO: Check this
+    ignored_official_rules = event.get("ignored_official_rules")
+    project_rules = event.get("project_rules")
+
+    # Rule instance to template mapping
+    rule_instance_to_template_map = {rule_instance_to_template}
+
+    context: Context = PreProcessContext(credentials=credentials, params=params, payload=payload)
+
+    # Apply preprocessing
+    try:
+        preprocess_result = {preprocessor_class}(context)
+
+        # Try our project rules
+        for rule in project_rules:
+            rule["instance"] = initialize_rule(rule)
+        
+        template, template_variables = select_template_project_rules(preprocess_result.data, project_rules)
+
+        # Project rules did not match, try our official rules
+        if not template:
+            official_rules = [{official_rules_instances}]
+            template, template_variables = select_template_official_rules(
+                preprocess_result,
+                official_rules,
+                rule_instance_to_template_map,
+                ignored_official_rules
+            )
+
+        if not template:
+            raise Exception("Missing template", {
+                "preprocess_result": preprocess_result,
+                "template": template,
+                "template_variables": template_variables
+            })
+
+    except Exception as error:
+        sentry_sdk.capture_exception(error)
+        raise error
+
+    return {
+        "template": template,
+        "template_variables": template_variables,
+        "contact_urn": preprocess_result.contact_urn,
+        "language": preprocess_result.language
+    }
