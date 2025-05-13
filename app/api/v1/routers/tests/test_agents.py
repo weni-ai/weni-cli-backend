@@ -3,16 +3,15 @@
 import io
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime
-from typing import Any, ClassVar
-from uuid import UUID, uuid4
+from typing import Any
+from uuid import UUID
 
 import pytest
-import requests
 from fastapi import status
 from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 from starlette.datastructures import UploadFile
+from starlette.responses import StreamingResponse
 
 from app.core.config import settings
 from app.main import app
@@ -26,6 +25,9 @@ TEST_TOOL_KEY = "test_tool"
 TEST_AGENT_KEY = "test_agent"
 TEST_FULL_TOOL_KEY = f"{TEST_AGENT_KEY}:{TEST_TOOL_KEY}"
 TEST_TOKEN = "Bearer test-token"
+TEST_PROJECT_UUID = "c67bc61e-c2b2-43f1-a409-88dec4bd4b9e"
+TEST_REQUEST_ID = "b1e887cc-ac6f-4e81-9d82-2bc65343a756"
+TEST_TOOLKIT_VERSION = "1.0.0"
 
 
 # Common fixtures
@@ -41,18 +43,20 @@ def api_path() -> str:
     return f"{settings.API_PREFIX}/v1/agents"
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def project_uuid() -> UUID:
     """Generate a random project UUID."""
-    return uuid4()
+    # Use a fixed UUID for consistency in tests if needed, otherwise keep random
+    # return uuid4()
+    return UUID(TEST_PROJECT_UUID)
 
 
 @pytest.fixture(scope="module")
-def auth_header() -> dict[str, str]:
+def auth_header(project_uuid: UUID) -> dict[str, str]:
     """Create an authorization header."""
     return {
         "Authorization": TEST_TOKEN,
-        "X-Project-Uuid": str(project_uuid),
+        "X-Project-Uuid": str(project_uuid),  # Remove: Sent via form data model
         "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
     }
 
@@ -80,6 +84,19 @@ def agent_definition() -> dict[str, Any]:
     }
 
 
+# Helper to create mock StreamingResponse content
+def create_mock_stream_content(events: list[dict[str, Any]]) -> bytes:
+    """Create NDJSON byte stream from a list of event dictionaries."""
+    return "\n".join(json.dumps(event) for event in events).encode("utf-8")
+
+
+# Helper to create a mock StreamingResponse
+def create_mock_streaming_response(events: list[dict[str, Any]]) -> StreamingResponse:
+    """Create a mock StreamingResponse."""
+    content = create_mock_stream_content(events)
+    return StreamingResponse(io.BytesIO(content), media_type="application/x-ndjson")
+
+
 @pytest.fixture
 def post_request_factory(
     client: TestClient,
@@ -94,9 +111,10 @@ def post_request_factory(
         return client.post(
             api_path,
             data={
+                "type": "passive",
                 "project_uuid": str(project_uuid),
                 "definition": json.dumps(agent_definition),
-                "toolkit_version": "1.0.0",  # Add default toolkit version for tests
+                "toolkit_version": TEST_TOOLKIT_VERSION,
             },
             files={
                 TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
@@ -120,10 +138,6 @@ def custom_post_request_factory(
         files_fields: dict[str, Any],
         headers: dict[str, str] | None = None,
     ) -> Any:
-        # Ensure toolkit_version is included if not explicitly provided
-        if "toolkit_version" not in data_fields:
-            data_fields["toolkit_version"] = "1.0.0"
-
         request_headers = headers if headers is not None else auth_header
         return client.post(
             api_path,
@@ -147,256 +161,325 @@ def parse_streaming_response(response: Any) -> list[dict[str, Any]]:
             try:
                 result.append(json.loads(line))
             except json.JSONDecodeError:
-                pass
+                print(f"Failed to decode JSON line: {line}")  # Debugging
+                pass  # Ignore lines that are not valid JSON
     return result
 
 
 class TestAgentConfigEndpoint:
     """Tests for agent config endpoint."""
 
+    MIN_EXPECTED_SUCCESS_STREAM_MESSAGES = 2
+
     @pytest.fixture
-    def mock_success_dependencies(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Mock dependencies for successful test."""
+    def mock_passive_configurator(self, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> Any:
+        """Mock the PassiveAgentConfigurator using mocker."""
+        # Mock the class itself using mocker
+        mock_configurator_class = mocker.MagicMock()
+
+        # Mock the instance and its configure_agents method
+        mock_configurator_instance = mocker.MagicMock()
+        mock_configurator_class.return_value = mock_configurator_instance
+
+        # Patch the class in the router module using monkeypatch
+        monkeypatch.setattr("app.api.v1.routers.agents.PassiveAgentConfigurator", mock_configurator_class)
+
+        # Return the mock instance for further configuration in tests
+        return mock_configurator_instance
+
+    @pytest.fixture
+    def mock_helper_functions(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Mock helper functions called directly by the endpoint."""
         mock_upload_file = UploadFile(
             filename="test_tool.zip",
             file=io.BytesIO(TEST_CONTENT),
         )
         monkeypatch.setattr(
-            "app.api.v1.routers.agents.extract_tool_files",
+            "app.api.v1.routers.agents.extract_agent_resources_files",
             AsyncMock(return_value={TEST_FULL_TOOL_KEY: mock_upload_file}),
         )
         monkeypatch.setattr(
-            "app.api.v1.routers.agents.read_tools_content",
+            "app.api.v1.routers.agents.read_agent_resources_content",
             AsyncMock(return_value=[(TEST_FULL_TOOL_KEY, TEST_CONTENT)]),
         )
-        process_response = {
-            "message": "Tool processed successfully",
-            "data": {
-                "tool_key": TEST_TOOL_KEY,
-                "agent_key": TEST_AGENT_KEY,
-                "size_kb": 1.0,
-                "progress": 100,
-            },
-            "success": True,
-            "code": "TOOL_PROCESSED",
-        }
-
-        # Use a custom mock for process_tool that accepts the toolkit_version parameter
-        async def mock_process_tool(*args: Any, **kwargs: Any) -> tuple[dict[str, Any], io.BytesIO]:
-            return (process_response, io.BytesIO(b"processed content"))
-
-        monkeypatch.setattr("app.services.tool.packager.process_tool", mock_process_tool)
-        monkeypatch.setattr(
-            "app.services.tool.packager.create_tool_zip", lambda *args, **kwargs: io.BytesIO(b"packed content")
-        )
-        monkeypatch.setattr(
-            "app.api.v1.routers.agents.push_to_nexus",
-            lambda *args, **kwargs: (True, None),
-        )
-        mock_nexus_response = type("MockResponse", (), {"status_code": 200, "json": lambda: {"success": True}})()
-        mock_nexus = type("MockNexus", (), {"push_agents": lambda *a, **k: mock_nexus_response})()
-        monkeypatch.setattr("app.api.v1.routers.agents.NexusClient", lambda *a, **k: mock_nexus)
-
-        # Mock datetime and UUID
-        mock_dt = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
-        mock_datetime = type("MockDatetime", (), {"now": lambda tz=None: mock_dt, "UTC": UTC})
-        monkeypatch.setattr("app.core.response.datetime", mock_datetime)
-        fixed_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        # Mock uuid4 used for request_id
+        fixed_uuid = UUID(TEST_REQUEST_ID)
         monkeypatch.setattr("app.api.v1.routers.agents.uuid4", lambda: fixed_uuid)
 
     def test_success(  # noqa: PLR0913
         self,
         post_request_factory: Callable[[], Any],
-        mock_success_dependencies: None,
+        mock_helper_functions: None,
+        mock_passive_configurator: Any,
         mock_auth_middleware: None,
     ) -> None:
         """Test successful agent config endpoint."""
+        # Setup mock response for configure_agents
+        success_stream = create_mock_streaming_response(
+            [
+                {"message": "Processing agents...", "success": True, "code": "PROCESSING_STARTED", "progress": 0.01},
+                {"message": "Tool processed successfully", "success": True, "code": "TOOL_PROCESSED"},
+                {"message": "Updating agents...", "success": True, "code": "NEXUS_UPLOAD_STARTED", "progress": 0.99},
+                {
+                    "message": "Agents processed successfully",
+                    "success": True,
+                    "code": "PROCESSING_COMPLETED",
+                    "progress": 1.0,
+                },
+            ]
+        )
+        mock_passive_configurator.configure_agents.return_value = success_stream
+
         # Execute
         response = post_request_factory()
 
         # Assert
         assert response.status_code == status.HTTP_200_OK, "Should return 200 OK"
+        mock_passive_configurator.configure_agents.assert_called_once()  # Verify configurator was called
 
         # Parse the streaming response
         response_data = parse_streaming_response(response)
 
         # Check that the streaming response includes expected messages
-        minimum_message_count = 2  # At least processing and completed messages
-        assert len(response_data) >= minimum_message_count
+        assert len(response_data) >= self.MIN_EXPECTED_SUCCESS_STREAM_MESSAGES, (
+            "Should contain at least start and end messages"
+        )
+        assert response_data[0]["code"] == "PROCESSING_STARTED"
+        assert response_data[-1]["code"] == "PROCESSING_COMPLETED"
+        assert response_data[-1]["success"] is True
 
     @pytest.mark.parametrize(
-        "test_id, data_fields, files_fields, headers, expected_status, error_msg, custom_setup",
+        "test_id, data_fields, files_fields, headers, expected_status, error_msg, mock_stream_events",
         [
+            # --- Validation Errors (Handled before configurator is called) ---
             (
                 "missing_project_uuid",
                 {
+                    "type": "passive",
                     "definition": json.dumps({"agents": {}}),
-                    "toolkit_version": "1.0.0",  # Add toolkit_version to avoid failing on that parameter
+                    "toolkit_version": TEST_TOOLKIT_VERSION,
                 },
-                {
-                    TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
-                },
-                None,  # Use default auth header
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                "Should require project_uuid",
-                None,  # No custom setup
+                {TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip")},
+                {"Authorization": TEST_TOKEN, "X-CLI-Version": settings.CLI_MINIMUM_VERSION},  # Missing X-Project-Uuid
+                status.HTTP_400_BAD_REQUEST,  # Expect 400 for missing header based on auth logic
+                "Should require project_uuid in data or header",
+                None,  # Configurator not called
             ),
             (
                 "missing_toolkit_version",
                 {
-                    "project_uuid": "test-uuid",
+                    "type": "passive",
+                    "project_uuid": TEST_PROJECT_UUID,
                     "definition": json.dumps({"agents": {}}),
+                    # Missing toolkit_version
                 },
-                {
-                    TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
-                },
+                {TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip")},
                 None,  # Use default auth header
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "Should require toolkit_version",
-                None,  # No custom setup
+                None,  # Configurator not called
             ),
             (
                 "invalid_definition",
                 {
-                    "project_uuid": "test-uuid",
+                    "type": "passive",
+                    "project_uuid": TEST_PROJECT_UUID,
                     "definition": "invalid json",
-                    "toolkit_version": "1.0.0",  # Add toolkit_version to avoid failing on that parameter
+                    "toolkit_version": TEST_TOOLKIT_VERSION,
                 },
-                {
-                    TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip"),
-                },
+                {TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(b"test"), "application/zip")},
                 None,  # Use default auth header
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "Should validate definition JSON",
-                None,  # No custom setup
+                None,  # Configurator not called
             ),
             (
                 "missing_authorization",
                 {
-                    "project_uuid": "test-uuid",
+                    "type": "passive",
+                    "project_uuid": TEST_PROJECT_UUID,
                     "definition": json.dumps({"agents": {}}),
-                    "toolkit_version": "1.0.0",  # Add toolkit_version to avoid failing on that parameter
+                    "toolkit_version": TEST_TOOLKIT_VERSION,
                 },
-                {
-                    TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
-                },
-                {
-                    "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
-                },  # Empty headers - no auth
-                status.HTTP_400_BAD_REQUEST,
-                "Missing Authorization or X-Project-Uuid header",
-                None,  # No custom setup
+                {TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip")},
+                {"X-Project-Uuid": TEST_PROJECT_UUID, "X-CLI-Version": settings.CLI_MINIMUM_VERSION},  # Missing Auth
+                status.HTTP_400_BAD_REQUEST,  # Expect 400 for missing header based on auth logic
+                "Missing Authorization header",
+                None,  # Configurator not called
             ),
             (
-                "process_tool_error",
-                None,  # Will be set in the test
-                None,  # Will be set in the test
-                None,  # Use default auth header
-                status.HTTP_200_OK,
-                "Should handle process_tool error",
+                "missing_type",
                 {
-                    "mock_process_tool": AsyncMock(side_effect=RuntimeError("Simulated error in processing")),
+                    # "type": "passive", # Missing type
+                    "project_uuid": TEST_PROJECT_UUID,
+                    "definition": json.dumps({"agents": {}}),
+                    "toolkit_version": TEST_TOOLKIT_VERSION,
                 },
+                {TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip")},
+                None,  # Use default auth header
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "Missing type field",
+                None,  # Configurator not called
+            ),
+            (
+                "invalid_type",
+                {
+                    "type": "invalid",  # Invalid type
+                    "project_uuid": TEST_PROJECT_UUID,
+                    "definition": json.dumps({"agents": {}}),
+                    "toolkit_version": TEST_TOOLKIT_VERSION,
+                },
+                {TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip")},
+                None,  # Use default auth header
+                status.HTTP_422_UNPROCESSABLE_ENTITY,  # Validation error
+                "Invalid type field",
+                None,  # Configurator not called
+            ),
+            # --- Configurator Errors (Handled within the stream) ---
+            (
+                "configurator_tool_process_error",
+                None,  # Use default post_request_factory
+                None,  # Use default post_request_factory
+                None,  # Use default post_request_factory
+                status.HTTP_200_OK,  # Stream starts successfully
+                "Should handle tool processing error from configurator",
+                [
+                    {"message": "Processing agents...", "success": True, "code": "PROCESSING_STARTED"},
+                    {
+                        "message": "Error processing tool",
+                        "data": {"error": "Simulated tool error"},
+                        "success": False,
+                        "code": "TOOL_PROCESSING_ERROR",
+                    },
+                    {
+                        "message": "Error processing agents",
+                        "data": {"error": "Failed to process tool..."},
+                        "success": False,
+                        "code": "PROCESSING_ERROR",
+                    },
+                ],
+            ),
+            (
+                "configurator_nexus_push_error",
+                None,  # Use default post_request_factory
+                None,  # Use default post_request_factory
+                None,  # Use default post_request_factory
+                status.HTTP_200_OK,  # Stream starts successfully
+                "Should handle nexus push error from configurator",
+                [
+                    {"message": "Processing agents...", "success": True, "code": "PROCESSING_STARTED"},
+                    {"message": "Tool processed successfully", "success": True, "code": "TOOL_PROCESSED"},
+                    {"message": "Updating agents...", "success": True, "code": "NEXUS_UPLOAD_STARTED"},
+                    {
+                        "message": "Failed to push agents",
+                        "data": {"error": "Simulated Nexus error"},
+                        "success": False,
+                        "code": "NEXUS_UPLOAD_ERROR",
+                    },
+                    {
+                        "message": "Error processing agents",
+                        "data": {"error": "Simulated Nexus error"},
+                        "success": False,
+                        "code": "PROCESSING_ERROR",
+                    },
+                ],
             ),
         ],
     )
-    def test_validation_errors(  # noqa: PLR0913
+    def test_errors_and_validations(  # noqa: PLR0913
         self,
         custom_post_request_factory: Callable[[dict[str, Any], dict[str, Any], dict[str, str] | None], Any],
         post_request_factory: Callable[[], Any],
-        project_uuid: UUID,
+        project_uuid: UUID,  # Included to ensure fixture is available if needed by auth_header
         test_id: str,
         data_fields: dict[str, Any] | None,
         files_fields: dict[str, Any] | None,
         headers: dict[str, str] | None,
         expected_status: int,
         error_msg: str,
-        custom_setup: dict[str, Any] | None,
-        monkeypatch: pytest.MonkeyPatch,
-        mock_auth_middleware: None,
+        mock_stream_events: list[dict[str, Any]] | None,
+        mock_helper_functions: None,  # Applied to all tests in this parametrize
+        mock_passive_configurator: Any,  # Applied to all tests
+        mock_auth_middleware: None,  # Applied to all tests
     ) -> None:
-        """Test validation errors for agent config endpoint."""
-        # For the process_tool_error case, we need a special setup
-        if test_id == "process_tool_error":
-            # Use the default post_request_factory
-            # But first set up the mocks as defined in custom_setup
-            if custom_setup:
-                for key, value in custom_setup.items():
-                    if key == "mock_process_tool":
-                        monkeypatch.setattr("app.services.tool.packager.process_tool", value)
+        """Test validation errors and error handling within the stream."""
+        if mock_stream_events:
+            # This is a test case where the configurator is expected to be called
+            # and return a stream (potentially with errors)
+            mock_response = create_mock_streaming_response(mock_stream_events)
+            mock_passive_configurator.configure_agents.return_value = mock_response
+            response = post_request_factory()  # Use the standard factory
 
-            response = post_request_factory()
+            # Assert status and stream content
+            assert response.status_code == expected_status, f"{test_id}: {error_msg} - Status Code Check"
+            response_data = parse_streaming_response(response)
+
+            # Check if the last message indicates failure if expected
+            should_fail = any(not event.get("success", True) for event in mock_stream_events)
+            if should_fail:
+                assert any(not event.get("success", True) for event in response_data), (
+                    f"{test_id}: {error_msg} - Stream Error Check"
+                )
+                # Check the last message is a failure/processing error
+                assert response_data[-1].get("success") is False, (
+                    f"{test_id}: {error_msg} - Last Message Failure Check"
+                )
+                assert response_data[-1].get("code") in [
+                    "PROCESSING_ERROR",
+                    "NEXUS_UPLOAD_ERROR",
+                    "TOOL_PROCESSING_ERROR",
+                ], f"{test_id}: {error_msg} - Last Message Code Check"
+            else:
+                assert all(event.get("success", True) for event in response_data), (
+                    f"{test_id}: {error_msg} - Stream Success Check"
+                )
+
         else:
-            # Use the custom_post_request_factory for other cases
+            # This is a test case for input validation errors (configurator should not be called)
             data = {} if data_fields is None else data_fields
             files = {} if files_fields is None else files_fields
             response = custom_post_request_factory(data, files, headers)
 
-        # Assert
-        assert response.status_code == expected_status, error_msg
+            # Assert status only, configurator not called
+            assert response.status_code == expected_status, f"{test_id}: {error_msg} - Status Code Check"
+            mock_passive_configurator.configure_agents.assert_not_called()  # Verify configurator was NOT called
 
     def test_push_to_nexus_error_response(
-        self, post_request_factory: Callable[[], Any], mock_auth_middleware: None, mocker: MockerFixture
+        self,
+        post_request_factory: Callable[[], Any],
+        mock_helper_functions: None,
+        mock_passive_configurator: Any,
+        mock_auth_middleware: None,
     ) -> None:
-        """Test handling of error response from push_to_nexus."""
-        # Mock successful tool processing
-        process_response = {
-            "message": "Tool processed successfully",
-            "data": {
-                "tool_key": TEST_TOOL_KEY,
-                "agent_key": TEST_AGENT_KEY,
-                "size_kb": 1.0,
-                "progress": 100,
-            },
-            "success": True,
-            "code": "TOOL_PROCESSED",
-        }
-
-        # Mock create_tool_zip to avoid zip file error
-        mocker.patch(
-            "app.services.tool.packager.create_tool_zip",
-            return_value=io.BytesIO(b"valid zip content"),
+        """Test handling of error response from push_to_nexus via configurator."""
+        # Setup mock response for configure_agents to simulate Nexus error
+        nexus_error_stream = create_mock_streaming_response(
+            [
+                {"message": "Processing agents...", "success": True, "code": "PROCESSING_STARTED"},
+                {"message": "Tool processed successfully", "success": True, "code": "TOOL_PROCESSED"},
+                {"message": "Updating agents...", "success": True, "code": "NEXUS_UPLOAD_STARTED"},
+                {
+                    "message": "Failed to push agents",
+                    "data": {"error": "Simulated Nexus Error"},
+                    "success": False,
+                    "code": "NEXUS_UPLOAD_ERROR",
+                },
+                {
+                    "message": "Error processing agents",
+                    "data": {"error": "Simulated Nexus Error"},
+                    "success": False,
+                    "code": "PROCESSING_ERROR",
+                },
+            ]
         )
-
-        # Mock process_tool to succeed
-        mocker.patch(
-            "app.services.tool.packager.process_tool",
-            new=AsyncMock(return_value=(process_response, io.BytesIO(b"processed content"))),
-        )
-
-        # Mock extract_tool_files and read_tools_content to return test data
-        mocker.patch(
-            "app.api.v1.routers.agents.extract_tool_files",
-            new=AsyncMock(return_value={TEST_FULL_TOOL_KEY: mocker.Mock()}),
-        )
-        mocker.patch(
-            "app.api.v1.routers.agents.read_tools_content",
-            new=AsyncMock(return_value=[(TEST_FULL_TOOL_KEY, TEST_CONTENT)]),
-        )
-
-        # Create a nexus error response
-        nexus_error = {
-            "message": "Failed to push agents",
-            "data": {
-                "error": "Error pushing to Nexus",
-                "tools_processed": 1,
-            },
-            "success": False,
-            "code": "NEXUS_UPLOAD_ERROR",
-            "progress": 0.9,
-        }
-
-        # Mock push_to_nexus to return an error
-        mocker.patch(
-            "app.api.v1.routers.agents.push_to_nexus",
-            return_value=(False, nexus_error),
-        )
+        mock_passive_configurator.configure_agents.return_value = nexus_error_stream
 
         # Execute
         response = post_request_factory()
 
         # Assert
-        assert response.status_code == status.HTTP_200_OK, "Should return 200 OK"
+        assert response.status_code == status.HTTP_200_OK, "Should return 200 OK as stream starts"
+        mock_passive_configurator.configure_agents.assert_called_once()
 
         # Parse the streaming response
         response_data = parse_streaming_response(response)
@@ -404,92 +487,92 @@ class TestAgentConfigEndpoint:
         # Check for error response
         error_messages = [r for r in response_data if r.get("success") is False]
         assert len(error_messages) > 0, "Should include an error message"
-        assert "Error pushing to Nexus" in str(error_messages[-1])
+        assert error_messages[-1]["code"] == "PROCESSING_ERROR", "Final message should be PROCESSING_ERROR"
+        assert "Simulated Nexus Error" in str(error_messages[-1]["data"]), (
+            "Error message should contain Nexus error details"
+        )
 
     def test_final_success_message(
-        self, post_request_factory: Callable[[], Any], mock_auth_middleware: None, mocker: MockerFixture
+        self,
+        post_request_factory: Callable[[], Any],
+        mock_helper_functions: None,
+        mock_passive_configurator: Any,
+        mock_auth_middleware: None,
     ) -> None:
         """Test final success message in streaming response."""
-        # Mock successful tool processing
-        process_response = {
-            "message": "Tool processed successfully",
-            "data": {
-                "tool_key": TEST_TOOL_KEY,
-                "agent_key": TEST_AGENT_KEY,
-                "size_kb": 1.0,
-                "progress": 100,
-            },
-            "success": True,
-            "code": "TOOL_PROCESSED",
-        }
-
-        # Mock create_tool_zip to avoid zip file error
-        mocker.patch(
-            "app.services.tool.packager.create_tool_zip",
-            return_value=io.BytesIO(b"valid zip content"),
+        # Setup mock response for configure_agents
+        success_stream = create_mock_streaming_response(
+            [
+                {"message": "Processing agents...", "success": True, "code": "PROCESSING_STARTED"},
+                {"message": "Tool processed successfully", "success": True, "code": "TOOL_PROCESSED"},
+                {"message": "Updating agents...", "success": True, "code": "NEXUS_UPLOAD_STARTED"},
+                {
+                    "message": "Agents processed successfully",
+                    "data": {"status": "completed"},
+                    "success": True,
+                    "code": "PROCESSING_COMPLETED",
+                    "progress": 1.0,
+                },
+            ]
         )
-
-        # Mock process_tool to succeed
-        mocker.patch(
-            "app.services.tool.packager.process_tool",
-            new=AsyncMock(return_value=(process_response, io.BytesIO(b"processed content"))),
-        )
-
-        # Mock extract_tool_files and read_tools_content to return test data
-        mocker.patch(
-            "app.api.v1.routers.agents.extract_tool_files",
-            new=AsyncMock(return_value={TEST_FULL_TOOL_KEY: mocker.Mock()}),
-        )
-        mocker.patch(
-            "app.api.v1.routers.agents.read_tools_content",
-            new=AsyncMock(return_value=[(TEST_FULL_TOOL_KEY, TEST_CONTENT)]),
-        )
-
-        # Mock push_to_nexus to succeed
-        mocker.patch(
-            "app.api.v1.routers.agents.push_to_nexus",
-            return_value=(True, None),
-        )
+        mock_passive_configurator.configure_agents.return_value = success_stream
 
         # Execute
         response = post_request_factory()
 
         # Assert
         assert response.status_code == status.HTTP_200_OK, "Should return 200 OK"
+        mock_passive_configurator.configure_agents.assert_called_once()
 
         # Parse the streaming response
         response_data = parse_streaming_response(response)
 
         # Check for success response
+        assert len(response_data) > 0, "Response should not be empty"
         final_message = response_data[-1]
         assert final_message["success"] is True, "Final message should have success=True"
         assert final_message["code"] == "PROCESSING_COMPLETED", "Final message should have code=PROCESSING_COMPLETED"
+        assert final_message["data"]["status"] == "completed", "Final message data should indicate completion"
 
     def test_push_to_nexus_with_no_tools(
-        self, post_request_factory: Callable[[], Any], mock_auth_middleware: None, mocker: MockerFixture
+        self,
+        post_request_factory: Callable[[], Any],
+        mock_helper_functions: None,
+        mock_passive_configurator: Any,
+        mock_auth_middleware: None,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Test pushing to Nexus when there are no tools."""
-        # Mock extract_tool_files and read_tools_content to return empty results
-        mocker.patch("app.api.v1.routers.agents.extract_tool_files", new=AsyncMock(return_value={}))
-        mocker.patch("app.api.v1.routers.agents.read_tools_content", new=AsyncMock(return_value=[]))
+        # Override helper mocks to return no tools
+        monkeypatch.setattr("app.api.v1.routers.agents.extract_agent_resources_files", AsyncMock(return_value={}))
+        monkeypatch.setattr("app.api.v1.routers.agents.read_agent_resources_content", AsyncMock(return_value=[]))
 
-        # Create a mock response object
-        mock_response = mocker.MagicMock(spec=requests.Response)
-        mock_response.status_code = status.HTTP_200_OK
-        mock_response.json.return_value = {"success": True}
-
-        # Create a mock NexusClient
-        mock_nexus_client = mocker.MagicMock()
-        mock_nexus_client.push_agents.return_value = mock_response
-
-        # Patch the NexusClient
-        mocker.patch("app.api.v1.routers.agents.NexusClient", return_value=mock_nexus_client)
-
-        # Mock push_to_nexus to succeed
-        mocker.patch(
-            "app.api.v1.routers.agents.push_to_nexus",
-            return_value=(True, None),
+        # Setup mock response for configure_agents (simulating success with 0 tools)
+        no_tools_success_stream = create_mock_streaming_response(
+            [
+                {
+                    "message": "Processing agents...",
+                    "data": {"total_files": 0},
+                    "success": True,
+                    "code": "PROCESSING_STARTED",
+                },
+                # No TOOL_PROCESSED message
+                {
+                    "message": "Updating agents...",
+                    "data": {"tool_count": 0},
+                    "success": True,
+                    "code": "NEXUS_UPLOAD_STARTED",
+                },
+                {
+                    "message": "Agents processed successfully",
+                    "data": {"total_files": 0, "processed_files": 0, "status": "completed"},
+                    "success": True,
+                    "code": "PROCESSING_COMPLETED",
+                    "progress": 1.0,
+                },
+            ]
         )
+        mock_passive_configurator.configure_agents.return_value = no_tools_success_stream
 
         # Execute
         response = post_request_factory()
@@ -497,51 +580,53 @@ class TestAgentConfigEndpoint:
         # Assert
         assert response.status_code == status.HTTP_200_OK, "Should return 200 OK"
 
+        # Verify configurator was called correctly (even with no tools)
+        mock_passive_configurator.configure_agents.assert_called_once_with([])  # Ensure called with empty list
+
         # Parse the streaming response
         response_data = parse_streaming_response(response)
 
         # Check for complete response
-        assert response_data[-1]["success"] is True, "Final message should have success=True"
-        assert response_data[-1]["code"] == "PROCESSING_COMPLETED", (
-            "Final message should have code=PROCESSING_COMPLETED"
-        )
+        assert len(response_data) > 0, "Response should not be empty"
+        final_message = response_data[-1]
+        assert final_message["success"] is True, "Final message should have success=True"
+        assert final_message["code"] == "PROCESSING_COMPLETED", "Final message should have code=PROCESSING_COMPLETED"
+        assert final_message["data"]["processed_files"] == 0, "Final message data should show 0 processed files"
 
     def test_process_tool_failure_stops_processing(
-        self, post_request_factory: Callable[[], Any], mock_auth_middleware: None, mocker: MockerFixture
+        self,
+        post_request_factory: Callable[[], Any],
+        mock_helper_functions: None,
+        mock_passive_configurator: Any,
+        mock_auth_middleware: None,
     ) -> None:
-        """Test that processing stops on tool processing failure."""
-        error_message = "Error processing tool"
-
-        # Create an error response
-        error_response = {
-            "message": error_message,
-            "data": {},
-            "success": False,
-            "code": "TOOL_PROCESSING_ERROR",
-        }
-
-        # Setup mocks to simulate tool processing failure using mocker
-        mocker.patch(
-            "app.api.v1.routers.agents.extract_tool_files",
-            new=AsyncMock(return_value={TEST_FULL_TOOL_KEY: mocker.Mock()}),
+        """Test that processing stops on tool processing failure within the configurator stream."""
+        # Setup mock response for configure_agents to simulate tool processing error
+        tool_error_stream = create_mock_streaming_response(
+            [
+                {"message": "Processing agents...", "success": True, "code": "PROCESSING_STARTED"},
+                {
+                    "message": "Error processing tool",
+                    "data": {"error": "Simulated tool processing failure"},
+                    "success": False,
+                    "code": "TOOL_PROCESSING_ERROR",
+                },
+                {
+                    "message": "Error processing agents",
+                    "data": {"error": "Failed to process tool..."},
+                    "success": False,
+                    "code": "PROCESSING_ERROR",
+                },
+            ]
         )
-        mocker.patch(
-            "app.api.v1.routers.agents.read_tools_content",
-            new=AsyncMock(return_value=[(TEST_FULL_TOOL_KEY, TEST_CONTENT)]),
-        )
-        mocker.patch("app.services.tool.packager.process_tool", new=AsyncMock(return_value=(error_response, None)))
-
-        # Mock push_to_nexus to ensure it's not called
-        def mock_push_to_nexus(*args: Any, **kwargs: Any) -> Any:
-            pytest.fail("push_to_nexus should not be called after tool processing failure")
-
-        mocker.patch("app.api.v1.routers.agents.push_to_nexus", mock_push_to_nexus)
+        mock_passive_configurator.configure_agents.return_value = tool_error_stream
 
         # Execute
         response = post_request_factory()
 
         # Assert
         assert response.status_code == status.HTTP_200_OK, "Should return 200 OK for streaming response"
+        mock_passive_configurator.configure_agents.assert_called_once()
 
         # Parse the streaming response
         response_data = parse_streaming_response(response)
@@ -549,36 +634,64 @@ class TestAgentConfigEndpoint:
         # Check for error response
         error_messages = [r for r in response_data if not r.get("success", True)]
         assert len(error_messages) > 0, "Should include an error message"
-        # We don't check the exact error message as it may be transformed by the error handling logic
+        assert error_messages[0]["code"] == "TOOL_PROCESSING_ERROR", "First error should be TOOL_PROCESSING_ERROR"
+        assert response_data[-1]["code"] == "PROCESSING_ERROR", "Last message should be PROCESSING_ERROR"
+        assert response_data[-1]["success"] is False, "Last message should indicate failure"
+        # Verify Nexus update/final success message isn't present
+        assert not any(r.get("code") == "NEXUS_UPLOAD_STARTED" for r in response_data), "Nexus upload should not start"
+        assert not any(r.get("code") == "PROCESSING_COMPLETED" for r in response_data), (
+            "Processing should not complete successfully"
+        )
 
 
+# Remove TestHelperFunctions related to push_to_nexus if it's gone
+# Keep TestHelperFunctions for functions still used directly by the router
 class TestHelperFunctions:
     """Tests for helper functions in agents.py."""
 
-    def test_extract_tool_files(self) -> None:
+    EXPECTED_EXTRACTED_TOOL_FILES = 2
+
+    def test_extract_agent_resources_files(self) -> None:
         """Test extracting tool files from form data."""
         import asyncio
+        from collections.abc import ItemsView
 
-        from app.api.v1.routers.agents import extract_tool_files
+        from app.api.v1.routers.agents import extract_agent_resources_files
 
         mock_file = UploadFile(filename="test.zip", file=io.BytesIO(TEST_CONTENT))
-        mock_form = {
-            "project_uuid": "test-uuid",  # Not a file
-            "definition": "{}",  # Not a file
-            TEST_FULL_TOOL_KEY: mock_file,  # Valid
-            "invalid-key": mock_file,  # Invalid (no colon)
+
+        # Simulate Starlette FormData structure more accurately
+        class MockFormData:
+            def __init__(self, items: dict[str, Any]):
+                self._items = items
+
+            def items(self) -> ItemsView[str, Any]:
+                return self._items.items()
+
+        mock_form_items = {
+            "project_uuid": "test-uuid",
+            "definition": "{}",
+            "type": "passive",
+            "toolkit_version": "1.0.0",
+            TEST_FULL_TOOL_KEY: mock_file,
+            "another_agent:another_tool": mock_file,
+            "invalid-key-no-colon": mock_file,
+            "some_other_field": "some_value",
         }
+        mock_form = MockFormData(mock_form_items)
 
-        result = asyncio.run(extract_tool_files(mock_form))
-        assert len(result) == 1, "Should extract one file"
-        assert TEST_FULL_TOOL_KEY in result, "Should extract valid file"
-        assert "invalid-key" not in result, "Should ignore invalid keys"
+        result = asyncio.run(extract_agent_resources_files(mock_form))
+        assert len(result) == self.EXPECTED_EXTRACTED_TOOL_FILES, "Should extract two valid tool files"
+        assert TEST_FULL_TOOL_KEY in result, "Should extract first valid file"
+        assert "another_agent:another_tool" in result, "Should extract second valid file"
+        assert "invalid-key-no-colon" not in result, "Should ignore keys without colons"
+        assert "project_uuid" not in result, "Should ignore non-file fields"
 
-    def test_read_tools_content(self) -> None:
+    def test_read_agent_resources_content(self) -> None:
         """Test reading content from tool files."""
         import asyncio
 
-        from app.api.v1.routers.agents import read_tools_content
+        from app.api.v1.routers.agents import read_agent_resources_content
 
         file1 = UploadFile(filename="test1.zip", file=io.BytesIO(b"content1"))
         file2 = UploadFile(filename="test2.zip", file=io.BytesIO(b"content2"))
@@ -587,86 +700,9 @@ class TestHelperFunctions:
         # Define constant for expected number of files
         expected_file_count = 2
 
-        result = asyncio.run(read_tools_content(tools_folders_zips))
+        result = asyncio.run(read_agent_resources_content(tools_folders_zips))
         assert len(result) == expected_file_count, "Should read two files"
+        # Sort results by key for consistent order checking
+        result.sort(key=lambda x: x[0])
         assert result[0][0] == "agent1:tool1" and result[0][1] == b"content1", "First content should match"
         assert result[1][0] == "agent2:tool2" and result[1][1] == b"content2", "Second content should match"
-
-
-class TestPushToNexus:
-    """Tests for push_to_nexus function."""
-
-    # Common test data
-    project_uuid: ClassVar[str] = str(uuid4())
-    definition: ClassVar[dict[str, Any]] = {"agents": {TEST_AGENT: {"tools": []}}}
-    tool_mapping: ClassVar[dict[str, Any]] = {TEST_FULL_TOOL_KEY: io.BytesIO(b"tool content")}
-    request_id: ClassVar[str] = str(uuid4())
-    authorization: ClassVar[str] = TEST_TOKEN
-
-    def test_success(self) -> None:
-        """Test successful push to Nexus."""
-        from app.api.v1.routers.agents import push_to_nexus
-
-        with pytest.MonkeyPatch().context() as mp:
-            # Create a mock response with status_code
-            mock_response = type("MockResponse", (), {"status_code": status.HTTP_200_OK, "text": "Success"})
-            mock_client = type("MockNexusClient", (), {"push_agents": lambda self, *args, **kwargs: mock_response()})
-            mp.setattr("app.api.v1.routers.agents.NexusClient", lambda auth: mock_client())
-
-            success, response = push_to_nexus(
-                self.project_uuid, self.definition, self.tool_mapping, self.request_id, self.authorization
-            )
-
-        assert success is True, "Should report success"
-        assert response is None, "Should not return a response"
-
-    def test_exception(self) -> None:
-        """Test exception handling in Nexus push."""
-        from app.api.v1.routers.agents import push_to_nexus
-
-        with pytest.MonkeyPatch().context() as mp:
-            # Mock exception
-            class MockNexusClient:
-                def push_agents(self, *args: Any, **kwargs: Any) -> None:
-                    raise RuntimeError("API error")
-
-            mp.setattr("app.api.v1.routers.agents.NexusClient", lambda auth: MockNexusClient())
-
-            success, response = push_to_nexus(
-                self.project_uuid, self.definition, self.tool_mapping, self.request_id, self.authorization
-            )
-
-        assert success is False, "Should report failure"
-        assert response is not None, "Should return an error response"
-        assert response["success"] is False, "Response should indicate failure"
-        assert response["data"] is not None, "Response should include data"
-        assert "API error" in response["data"]["error"], "Should include the exception message"
-
-    @pytest.mark.parametrize(
-        "status_code, status_text, expected_error_fragment",
-        [
-            (status.HTTP_400_BAD_REQUEST, "Bad request error", "Failed to push agents: 400"),
-            (status.HTTP_401_UNAUTHORIZED, "Unauthorized", "Failed to push agents: 401"),
-            (status.HTTP_500_INTERNAL_SERVER_ERROR, "Server error", "Failed to push agents: 500"),
-        ],
-    )
-    def test_non_200_status_codes(self, status_code: int, status_text: str, expected_error_fragment: str) -> None:
-        """Test handling of various non-200 status codes from Nexus API."""
-        from app.api.v1.routers.agents import push_to_nexus
-
-        with pytest.MonkeyPatch().context() as mp:
-            # Create a mock response with the specified non-200 status code
-            error_response = type("MockResponse", (), {"status_code": status_code, "text": status_text})
-            mock_client = type("MockNexusClient", (), {"push_agents": lambda self, *args, **kwargs: error_response()})
-            mp.setattr("app.api.v1.routers.agents.NexusClient", lambda auth: mock_client())
-
-            success, response = push_to_nexus(
-                self.project_uuid, self.definition, self.tool_mapping, self.request_id, self.authorization
-            )
-
-        assert success is False, f"Should report failure when status code is {status_code}"
-        assert response is not None, "Should return an error response"
-        assert response["success"] is False, "Response should indicate failure"
-        assert response["data"] is not None, "Response should include data"
-        assert expected_error_fragment in response["data"]["error"], "Should include status code in error"
-        assert status_text in response["data"]["error"], "Should include response text in error message"
