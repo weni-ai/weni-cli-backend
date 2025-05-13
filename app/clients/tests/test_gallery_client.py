@@ -64,7 +64,7 @@ class TestGalleryClient:
         rules_files: dict,
     ) -> None:
         """Test the push_agents method with a successful response."""
-        expected_url = f"{settings.GALLERY_BASE_URL}/api/v3/agents"
+        expected_url = f"{settings.GALLERY_BASE_URL}/api/v3/agents/push/"
         mock_response_data = {"message": "Agents pushed successfully"}
 
         requests_mock.post(
@@ -104,7 +104,7 @@ class TestGalleryClient:
         rules_files: dict,
     ) -> None:
         """Test the push_agents method with an error response."""
-        expected_url = f"{settings.GALLERY_BASE_URL}/api/v3/agents"
+        expected_url = f"{settings.GALLERY_BASE_URL}/api/v3/agents/push/"
         mock_error_data = {"detail": "Invalid request"}
 
         requests_mock.post(

@@ -16,11 +16,11 @@ class GalleryClient:
         self.project_uuid = project_uuid
 
     def push_agents(self, agents_definition: dict, rules_files: dict) -> Response:
-        url = f"{self.base_url}/api/v3/agents"
+        url = f"{self.base_url}/api/v3/agents/push/"
 
         data = {
             "project_uuid": self.project_uuid,
             "agents": json.dumps(agents_definition),
         }
-
+        
         return requests.post(url, headers=self.headers, data=data, files=rules_files)
