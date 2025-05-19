@@ -129,8 +129,8 @@ class TestAWSLambdaClient:
         )
 
         assert isinstance(result, LambdaFunction)
-        assert result.function_arn == TEST_FUNCTION_ARN
-        assert result.function_name == TEST_FUNCTION_NAME
+        assert result.arn == TEST_FUNCTION_ARN
+        assert result.name == TEST_FUNCTION_NAME
 
     def test_delete_function(self, lambda_client: AWSLambdaClient, mock_lambda_client: Any) -> None:
         """Test delete_function method"""

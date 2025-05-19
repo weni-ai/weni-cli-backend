@@ -14,6 +14,7 @@ from starlette.datastructures import UploadFile
 
 from app.api.v1.models.requests import RunToolRequestModel
 from app.clients.aws import AWSLambdaClient
+from app.clients.aws.lambda_client import LambdaFunction
 from app.core.response import CLIResponse, send_response
 from app.services.tool.packager import process_tool
 
@@ -110,20 +111,20 @@ async def run_tool_test(  # noqa: PLR0915
             yield send_response(response, request_id=request_id)
 
             # Create lambda function
-            lambda_function = lambda_client.create_function(
+            lambda_function: LambdaFunction = lambda_client.create_function(
                 function_name=function_name,
                 handler="lambda_function.lambda_handler",
                 code=tool_zip_bytes,
                 description=f"CLI run for tool {data.tool_key} by {data.agent_key}. Project: {data.project_uuid}",
             )
 
-            if not lambda_function.function_arn or not lambda_function.function_name:
+            if not lambda_function.arn or not lambda_function.name:
                 raise ValueError("Failed to create tool")
 
-            if not await lambda_client.wait_for_function_active(lambda_function.function_arn):
+            if not await lambda_client.wait_for_function_active(lambda_function.arn):
                 raise ValueError("Tool did not became active")
 
-            logger.info(f"Tool {lambda_function.function_arn} active, invoking...")
+            logger.info(f"Tool {lambda_function.arn} active, invoking...")
 
             response = {
                 "message": "Running test cases",
@@ -157,8 +158,8 @@ async def run_tool_test(  # noqa: PLR0915
 
                 test_event = {
                     "agent_key": data.agent_key,
-                    "action_group": lambda_function.function_name,
-                    "function": lambda_function.function_name,
+                    "action_group": lambda_function.name,
+                    "function": lambda_function.name,
                     "parameters": parameters,
                     "sessionAttributes": {
                         "credentials": json.dumps(test_data.get("credentials", data.tool_credentials)),
@@ -168,7 +169,7 @@ async def run_tool_test(  # noqa: PLR0915
 
                 # Invoke lambda function
                 invoke_result, invoke_start_time, invoke_end_time = lambda_client.invoke_function(
-                    lambda_function.function_arn, test_event
+                    lambda_function.arn, test_event
                 )
 
                 test_response: CLIResponse = {
