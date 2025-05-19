@@ -10,7 +10,7 @@ sentry_sdk.init(
 
 import json
 
-from weni.context import PreProcessContext
+from weni.context import PreProcessorContext
 from preprocessor.{preprocessor_module} import {preprocessor_class}
 {official_rules_imports}
 
@@ -69,7 +69,7 @@ def lambda_handler(event, context):
     # Rule class to template mapping
     rule_class_to_template_map = {rule_class_to_template}
 
-    context: Context = PreProcessContext(credentials=credentials, params=params, payload=payload)
+    context: Context = PreProcessorContext(credentials=credentials, params=params, payload=payload)
 
     # Apply preprocessing
     try:
