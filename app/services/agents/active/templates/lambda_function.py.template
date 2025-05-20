@@ -17,7 +17,7 @@ from preprocessor.{preprocessor_module} import {preprocessor_class}
 
 def select_template_official_rules(data, rules, classname_to_key_map, template_map, ignored_rules_keys):
     for rule in rules:
-        if clasname_to_key_map.get(rule.__class__.__name__, None) in ignored_rules_keys:
+        if classname_to_key_map.get(rule.__class__.__name__, None) in ignored_rules_keys:
             continue
 
         if rule.execute(data=data):
