@@ -85,6 +85,7 @@ class ActiveAgentProcessor:
                 "official_rules_imports": self.mount_rule_imports(),
                 "rule_class_to_template": str(self.mount_rule_class_to_template_map()),
                 "official_rules_instances": self.mount_rule_instances_list(),
+                "classname_to_key_map": str(self.mount_rule_classname_to_key_map()),
             }
             lambda_function_content = packager.build_lambda_function_file(template_path, replacements)
             lambda_function_path = temp_path / "lambda_function.py"
@@ -135,3 +136,6 @@ class ActiveAgentProcessor:
 
     def mount_rule_instances_list(self) -> str:
         return ", ".join([f"{rule.class_name}()" for rule in self.rules])
+
+    def mount_rule_classname_to_key_map(self) -> dict[str, str]:
+        return {f"{rule.class_name}": f"{rule.key}" for rule in self.rules}

@@ -15,9 +15,9 @@ from preprocessor.{preprocessor_module} import {preprocessor_class}
 {official_rules_imports}
 
 
-def select_template_official_rules(data, rules, template_map, ignored_rules):
+def select_template_official_rules(data, rules, classname_to_key_map, template_map, ignored_rules_keys):
     for rule in rules:
-        if rule.__class__.__name__ in ignored_rules:
+        if clasname_to_key_map.get(rule.__class__.__name__, None) in ignored_rules_keys:
             continue
 
         if rule.execute(data=data):
@@ -63,11 +63,12 @@ def lambda_handler(event, context):
     payload = event.get("payload", {})
     params = event.get("params", {})
     credentials = event.get("credentials", {}) # TODO: Check this
-    ignored_official_rules = event.get("ignored_official_rules", [])
+    ignored_official_rules_keys = event.get("ignored_official_rules", [])
     project_rules = event.get("project_rules", [])
 
     # Rule class to template mapping
     rule_class_to_template_map = {rule_class_to_template}
+    classname_to_key_map = {classname_to_key_map}
 
     context: Context = PreProcessorContext(credentials=credentials, params=params, payload=payload)
 
@@ -87,8 +88,9 @@ def lambda_handler(event, context):
             template, template_variables = select_template_official_rules(
                 preprocess_result,
                 official_rules,
+                classname_to_key_map,
                 rule_class_to_template_map,
-                ignored_official_rules
+                ignored_official_rules_keys
             )
 
         if not template:
