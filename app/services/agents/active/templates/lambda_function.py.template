@@ -63,7 +63,7 @@ def lambda_handler(event, context):
     payload = event.get("payload", {})
     params = event.get("params", {})
     credentials = event.get("credentials", {}) # TODO: Check this
-    ignored_official_rules = event.get("ignored_official_rules", {})
+    ignored_official_rules = event.get("ignored_official_rules", [])
     project_rules = event.get("project_rules", [])
 
     # Rule class to template mapping
