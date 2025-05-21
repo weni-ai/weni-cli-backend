@@ -8,7 +8,7 @@ import pytest
 from app.services.agents.active.models import ActiveAgentResourceModel, Resource, RuleResource
 from app.services.agents.active.processor import ActiveAgentProcessor
 
-EXPECTED_INSTALL_DEPENDENCIES_CALLS = 2
+EXPECTED_INSTALL_DEPENDENCIES_CALLS = 3
 
 
 @pytest.fixture
@@ -40,6 +40,13 @@ def active_agent_resource_model_fixture() -> ActiveAgentResourceModel:
                 module_name="rule1",
                 class_name="Rule1",
                 template="rule1_template",
+            ),
+            RuleResource(
+                key="rule2",
+                content=rule_zip.getvalue(),
+                module_name="rule2",
+                class_name="Rule2",
+                template="rule2_template",
             )
         ],
         preprocessor_example=None,
@@ -159,3 +166,27 @@ def test_active_agent_processor_process_handles_exception(
     mock_mkdtemp.assert_called_once_with(prefix=f"agent_{agent_key}_{project_uuid}_")
     mock_shutil_rmtree.assert_called_with(test_temp_dir, ignore_errors=True)
     # No cleanup needed for the fake path
+
+def test_mount_rule_imports(active_agent_resource_model_fixture: ActiveAgentResourceModel) -> None:
+    processor = ActiveAgentProcessor(
+        project_uuid="test_project_uuid", toolkit_version="0.1.0", agent_resource=active_agent_resource_model_fixture
+    )
+    assert processor.mount_rule_imports() == "from rules.rule1.rule1 import Rule1\nfrom rules.rule2.rule2 import Rule2"
+
+def test_mount_rule_class_to_template_map(active_agent_resource_model_fixture: ActiveAgentResourceModel) -> None:
+    processor = ActiveAgentProcessor(
+        project_uuid="test_project_uuid", toolkit_version="0.1.0", agent_resource=active_agent_resource_model_fixture
+    )
+    assert processor.mount_rule_class_to_template_map() == {"Rule1": "rule1_template", "Rule2": "rule2_template"}
+
+def test_mount_rule_instances_list(active_agent_resource_model_fixture: ActiveAgentResourceModel) -> None:
+    processor = ActiveAgentProcessor(
+        project_uuid="test_project_uuid", toolkit_version="0.1.0", agent_resource=active_agent_resource_model_fixture
+    )
+    assert processor.mount_rule_instances_list() == "Rule1(), Rule2()"
+
+def test_mount_rule_classname_to_key_map(active_agent_resource_model_fixture: ActiveAgentResourceModel) -> None:
+    processor = ActiveAgentProcessor(
+        project_uuid="test_project_uuid", toolkit_version="0.1.0", agent_resource=active_agent_resource_model_fixture
+    )
+    assert processor.mount_rule_classname_to_key_map() == {"Rule1": "rule1", "Rule2": "rule2"}

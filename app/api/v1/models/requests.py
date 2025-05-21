@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import UUID4, BaseModel, Json
 
@@ -9,6 +10,13 @@ class BaseRequestModel(BaseModel):
     project_uuid: UUID4
     definition: Json
     toolkit_version: str
+
+
+class ConfigureAgentsRequestModel(BaseRequestModel):
+    """Configure agents request model."""
+
+    # type can only be "active" or "passive"
+    type: Literal["active", "passive"]
 
 
 class RunToolRequestModel(BaseRequestModel):

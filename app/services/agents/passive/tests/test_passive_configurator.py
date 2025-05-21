@@ -163,7 +163,7 @@ async def test_configure_agents_success(
     mock_send_response.assert_any_call(expected_nexus_start_data, request_id=configurator.request_id)
 
     # Verify Nexus client call
-    mock_nexus_client.assert_called_once_with(configurator.authorization)
+    mock_nexus_client.assert_called_once_with(configurator.authorization, configurator.project_uuid)
     expected_tool_mapping = {
         "agent1:tool1": b"zip_content_for_agent1:tool1",
         "agent1:tool2": b"zip_content_for_agent1:tool2",
@@ -172,7 +172,7 @@ async def test_configure_agents_success(
     expected_definition = configurator.definition.copy()
     expected_definition["agents"]["agent1"]["tools"][0]["source"]["entrypoint"] = "lambda_function.lambda_handler"
     mock_nexus_client.return_value.push_agents.assert_called_once_with(
-        configurator.project_uuid, expected_definition, expected_tool_mapping
+       expected_definition, expected_tool_mapping
     )
 
     # Verify final message
@@ -366,7 +366,7 @@ async def test_configure_agents_empty_input(
     mock_send_response.assert_any_call(expected_nexus_start_data, request_id=configurator.request_id)
 
     # Verify Nexus client call (with empty tool_mapping)
-    mock_nexus_client.assert_called_once_with(configurator.authorization)
+    mock_nexus_client.assert_called_once_with(configurator.authorization, configurator.project_uuid)
     expected_tool_mapping: dict[str, bytes] = {}
     # Check that entrypoint was modified before push (even if no tools?)
     # The current logic iterates definition['agents'], so it should modify if agents exist
@@ -376,7 +376,7 @@ async def test_configure_agents_empty_input(
         expected_definition["agents"]["agent1"]["tools"][0]["source"]["entrypoint"] = "lambda_function.lambda_handler"
 
     mock_nexus_client.return_value.push_agents.assert_called_once_with(
-        configurator.project_uuid, expected_definition, expected_tool_mapping
+        expected_definition, expected_tool_mapping
     )
 
 
@@ -412,14 +412,14 @@ def test_push_to_nexus_success(
 
     assert success is True
     assert response_data is None
-    mock_nexus_client.assert_called_once_with(configurator.authorization)
+    mock_nexus_client.assert_called_once_with(configurator.authorization, configurator.project_uuid)
 
     # Check that entrypoint was modified
     expected_definition = configurator.definition.copy()
     expected_definition["agents"]["agent1"]["tools"][0]["source"]["entrypoint"] = "lambda_function.lambda_handler"
 
     mock_nexus_client.return_value.push_agents.assert_called_once_with(
-        configurator.project_uuid, expected_definition, tool_mapping
+        expected_definition, tool_mapping
     )
     mock_logger.info.assert_any_call(
         f"Sending {len(tool_mapping)} processed tools to Nexus for project {configurator.project_uuid}"
