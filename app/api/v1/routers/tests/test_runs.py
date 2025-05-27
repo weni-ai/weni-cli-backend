@@ -1,4 +1,4 @@
-"""Tests for skill runs endpoint."""
+"""Tests for tool runs endpoint."""
 
 import io
 import json
@@ -18,7 +18,9 @@ from app.tests.utils import AsyncMock
 # Common test constants
 TEST_CONTENT = b"test content"
 TEST_AGENT_NAME = "test-agent"
-TEST_SKILL_NAME = "test-skill"
+TEST_TOOL_NAME = "test-tool"
+TEST_TOOL_KEY = "test_tool"
+TEST_AGENT_KEY = "test_agent"
 TEST_TOKEN = "Bearer test-token"
 TEST_FUNCTION_NAME = "test-function-name"
 TEST_FUNCTION_ARN = "arn:aws:lambda:us-east-1:123456789012:function:test-function-name"
@@ -55,15 +57,16 @@ def auth_header() -> dict[str, str]:
 
 
 @pytest.fixture
-def run_skill_request_data() -> dict[str, Any]:
-    """Return test data for run_skill_test endpoint."""
+def run_tool_request_data() -> dict[str, Any]:
+    """Return test data for run_tool_test endpoint."""
     agent_definition = {
         "name": TEST_AGENT_NAME,
         "slug": "test-agent-slug",
-        "skills": [
+        "tools": [
             {
-                "name": TEST_SKILL_NAME,
-                "slug": "test-skill-slug",
+                "key": TEST_TOOL_KEY,
+                "name": TEST_TOOL_NAME,
+                "slug": "test-tool-slug",
             }
         ],
     }
@@ -77,16 +80,16 @@ def run_skill_request_data() -> dict[str, Any]:
 
     return {
         "project_uuid": str(uuid4()),
-        "definition": json.dumps({"agents": {"test-agent-id": agent_definition}}),
+        "definition": json.dumps({"agents": {TEST_AGENT_KEY: agent_definition}}),
         "test_definition": json.dumps(test_definition),
-        "skill_name": TEST_SKILL_NAME,
-        "agent_name": TEST_AGENT_NAME,
-        "skill_credentials": json.dumps(
+        "tool_key": TEST_TOOL_KEY,
+        "agent_key": TEST_AGENT_KEY,
+        "tool_credentials": json.dumps(
             {
                 "credential-test-key": "test-value",
             }
         ),
-        "skill_globals": json.dumps(
+        "tool_globals": json.dumps(
             {
                 "global-test-key": "test-value",
             }
@@ -107,18 +110,18 @@ def test_log_events() -> list[dict[str, Any]]:
 
 @pytest.fixture
 def post_run_request_factory(
-    client: TestClient, api_path: str, auth_header: dict[str, str], run_skill_request_data: dict[str, Any]
+    client: TestClient, api_path: str, auth_header: dict[str, str], run_tool_request_data: dict[str, Any]
 ) -> Callable[[], Any]:
     """Return a factory function for making POST requests to the runs endpoint."""
 
     def make_post_request() -> Any:
-        # Create files dictionary with the skill file
+        # Create files dictionary with the tool file
         files = {
-            "skill": ("test_skill.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
+            "tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
         }
 
         # Merge the data and files for the multipart request
-        data = {**run_skill_request_data}
+        data = {**run_tool_request_data}
 
         headers = {**auth_header, "X-CLI-Version": settings.CLI_MINIMUM_VERSION}
 
@@ -161,24 +164,24 @@ def parse_streaming_response(response: Any) -> list[dict[str, Any]]:
     return result
 
 
-class TestRunSkillEndpoint:
-    """Tests for the run_skill_test endpoint."""
+class TestRunToolEndpoint:
+    """Tests for the run_tool_test endpoint."""
 
     @pytest.fixture
     def mock_success_dependencies(self, mocker: MockerFixture) -> None:
-        """Mock dependencies for successful run_skill_test."""
-        # Mock process_skill to return a successful result
+        """Mock dependencies for successful run_tool_test."""
+        # Mock process_tool to return a successful result
         mock_process_result = {
-            "message": "Skill processed successfully",
+            "message": "Tool processed successfully",
             "data": {
-                "skill_name": TEST_SKILL_NAME,
+                "tool_key": TEST_TOOL_KEY,
             },
             "success": True,
-            "code": "SKILL_PROCESSED",
+            "code": "TOOL_PROCESSED",
         }
 
         mocker.patch(
-            "app.api.v1.routers.runs.process_skill",
+            "app.api.v1.routers.runs.process_tool",
             new=AsyncMock(return_value=(mock_process_result, io.BytesIO(TEST_CONTENT))),
         )
 
@@ -204,12 +207,12 @@ class TestRunSkillEndpoint:
         # Mock asyncio.sleep to avoid delays in tests
         mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
 
-    def test_run_skill_success(
+    def test_run_tool_success(
         self, post_run_request_factory: Callable[[], Any], mock_success_dependencies: None, mock_auth_middleware: None
     ) -> None:
-        """Test successful run_skill_test endpoint."""
+        """Test successful run_tool_test endpoint."""
         # Minimum expected response items
-        min_expected_responses = 4  # initial, skill processed, lambda creating, completion/error
+        min_expected_responses = 4  # initial, tool processed, lambda creating, completion/error
 
         # Execute
         response = post_run_request_factory()
@@ -223,15 +226,15 @@ class TestRunSkillEndpoint:
         # Check for expected response objects
         assert (
             len(response_data) >= min_expected_responses
-        )  # At least initial response, skill processed, lambda creating, completion/error
+        )  # At least initial response, tool processed, lambda creating, completion/error
 
         # Check initial response
         assert response_data[0]["code"] == "PROCESSING_STARTED", "First message should have code=PROCESSING_STARTED"
         assert response_data[0]["success"] is True, "First message should have success=True"
 
-        # Check for skill processed message
-        skill_processed_msgs = [r for r in response_data if r.get("code") == "SKILL_PROCESSED"]
-        assert len(skill_processed_msgs) > 0, "Should include a SKILL_PROCESSED message"
+        # Check for tool processed message
+        tool_processed_msgs = [r for r in response_data if r.get("code") == "TOOL_PROCESSED"]
+        assert len(tool_processed_msgs) > 0, "Should include a TOOL_PROCESSED message"
 
         # Check for lambda creating message
         lambda_creating_msgs = [r for r in response_data if r.get("code") == "LAMBDA_FUNCTION_CREATING"]
@@ -241,18 +244,18 @@ class TestRunSkillEndpoint:
         "test_id, data_fields, files_fields, headers, expected_status, expected_error_code",
         [
             (
-                "missing_skill_file",
+                "missing_tool_file",
                 {
                     "project_uuid": str(uuid4()),
                     "definition": json.dumps({"agents": {}}),
                     "test_definition": json.dumps({"tests": {}}),
-                    "skill_name": TEST_SKILL_NAME,
-                    "agent_name": TEST_AGENT_NAME,
-                    "skill_credentials": json.dumps({}),
-                    "skill_globals": json.dumps({}),
+                    "tool_key": TEST_TOOL_KEY,
+                    "agent_key": TEST_AGENT_KEY,
+                    "tool_credentials": json.dumps({}),
+                    "tool_globals": json.dumps({}),
                     "toolkit_version": "1.0.0",
                 },
-                {},  # No skill file
+                {},  # No tool file
                 None,  # Use default auth header
                 status.HTTP_400_BAD_REQUEST,
                 None,  # No streaming response for 400
@@ -263,14 +266,14 @@ class TestRunSkillEndpoint:
                     "project_uuid": str(uuid4()),
                     "definition": json.dumps({"agents": {}}),
                     "test_definition": json.dumps({"tests": {}}),
-                    "skill_name": TEST_SKILL_NAME,
-                    "agent_name": TEST_AGENT_NAME,
-                    "skill_credentials": json.dumps({}),
-                    "skill_globals": json.dumps({}),
+                    "tool_key": TEST_TOOL_KEY,
+                    "agent_key": TEST_AGENT_KEY,
+                    "tool_credentials": json.dumps({}),
+                    "tool_globals": json.dumps({}),
                     "toolkit_version": "1.0.0",
                 },
                 {
-                    "skill": ("test_skill.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
+                    "tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
                 },
                 {
                     "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
@@ -291,20 +294,20 @@ class TestRunSkillEndpoint:
         expected_error_code: str | None,
         mock_auth_middleware: None,
     ) -> None:
-        """Test validation errors for run_skill_test endpoint."""
+        """Test validation errors for run_tool_test endpoint."""
         # Execute
         response = custom_post_run_request_factory(data_fields, files_fields, headers)
 
         # Assert
         assert response.status_code == expected_status, f"Expected status {expected_status} for {test_id}"
 
-    def test_process_skill_error(
+    def test_process_tool_error(
         self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture, mock_auth_middleware: None
     ) -> None:
-        """Test error handling when process_skill raises an exception."""
+        """Test error handling when process_tool raises an exception."""
         # Setup
-        error_message = "Error processing skill"
-        mocker.patch("app.api.v1.routers.runs.process_skill", new=AsyncMock(side_effect=ValueError(error_message)))
+        error_message = "Error processing tool"
+        mocker.patch("app.api.v1.routers.runs.process_tool", new=AsyncMock(side_effect=ValueError(error_message)))
 
         # Mock AWS clients
         mock_lambda_client = mocker.MagicMock()
@@ -336,17 +339,17 @@ class TestRunSkillEndpoint:
         self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture, mock_auth_middleware: None
     ) -> None:
         """Test error handling when lambda function creation fails."""
-        # Setup - mock process_skill to succeed
+        # Setup - mock process_tool to succeed
         mock_process_result = {
-            "message": "Skill processed successfully",
+            "message": "Tool processed successfully",
             "data": {
-                "skill_name": TEST_SKILL_NAME,
+                "tool_key": TEST_TOOL_KEY,
             },
             "success": True,
-            "code": "SKILL_PROCESSED",
+            "code": "TOOL_PROCESSED",
         }
         mocker.patch(
-            "app.api.v1.routers.runs.process_skill",
+            "app.api.v1.routers.runs.process_tool",
             new=AsyncMock(return_value=(mock_process_result, io.BytesIO(TEST_CONTENT))),
         )
 
@@ -380,17 +383,17 @@ class TestRunSkillEndpoint:
         self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture, mock_auth_middleware: None
     ) -> None:
         """Test error handling when lambda function activation fails."""
-        # Setup - mock process_skill to succeed
+        # Setup - mock process_tool to succeed
         mock_process_result = {
-            "message": "Skill processed successfully",
+            "message": "Tool processed successfully",
             "data": {
-                "skill_name": TEST_SKILL_NAME,
+                "tool_key": TEST_TOOL_KEY,
             },
             "success": True,
-            "code": "SKILL_PROCESSED",
+            "code": "TOOL_PROCESSED",
         }
         mocker.patch(
-            "app.api.v1.routers.runs.process_skill",
+            "app.api.v1.routers.runs.process_tool",
             new=AsyncMock(return_value=(mock_process_result, io.BytesIO(TEST_CONTENT))),
         )
 
@@ -430,17 +433,17 @@ class TestRunSkillEndpoint:
         self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture, mock_auth_middleware: None
     ) -> None:
         """Test error handling when lambda function invocation fails."""
-        # Setup - mock process_skill to succeed
+        # Setup - mock process_tool to succeed
         mock_process_result = {
-            "message": "Skill processed successfully",
+            "message": "Tool processed successfully",
             "data": {
-                "skill_name": TEST_SKILL_NAME,
+                "tool_key": TEST_TOOL_KEY,
             },
             "success": True,
-            "code": "SKILL_PROCESSED",
+            "code": "TOOL_PROCESSED",
         }
         mocker.patch(
-            "app.api.v1.routers.runs.process_skill",
+            "app.api.v1.routers.runs.process_tool",
             new=AsyncMock(return_value=(mock_process_result, io.BytesIO(TEST_CONTENT))),
         )
 
@@ -484,7 +487,7 @@ class TestRunSkillEndpoint:
     ) -> None:
         """Test that resources are cleaned up when an error occurs."""
         mocker.patch(
-            "app.api.v1.routers.runs.process_skill", new=AsyncMock(side_effect=ValueError("Process skill error"))
+            "app.api.v1.routers.runs.process_tool", new=AsyncMock(side_effect=ValueError("Process tool error"))
         )
 
         # When the Lambda client is created early in the code, make lambda_function_name available
@@ -525,7 +528,7 @@ class TestRunSkillEndpoint:
         self,
         post_run_request_factory: Callable[[], Any],
         mocker: MockerFixture,
-        run_skill_request_data: dict[str, Any],
+        run_tool_request_data: dict[str, Any],
         mock_auth_middleware: None,
     ) -> None:
         """Test error handling when agent is not found in definition."""
@@ -541,7 +544,7 @@ class TestRunSkillEndpoint:
         mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
 
         # Modify the request data
-        modified_data = run_skill_request_data.copy()
+        modified_data = run_tool_request_data.copy()
         modified_data["definition"] = json.dumps(empty_definition)
 
         # Make the request
@@ -549,7 +552,7 @@ class TestRunSkillEndpoint:
         api_path = f"{settings.API_PREFIX}/v1/runs"
 
         files = {
-            "skill": ("test_skill.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
+            "tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
         }
 
         response = client.post(
@@ -572,23 +575,23 @@ class TestRunSkillEndpoint:
         # Check for error message
         error_responses = [r for r in response_data if r.get("success") is False]
         assert len(error_responses) > 0
-        assert f"Could not find agent {TEST_AGENT_NAME}" in str(error_responses[-1])
+        assert f"Could not find agent {TEST_AGENT_KEY}" in str(error_responses[-1])
 
-    def test_skill_not_found_for_agent(
+    def test_tool_not_found_for_agent(
         self,
         post_run_request_factory: Callable[[], Any],
         mocker: MockerFixture,
-        run_skill_request_data: dict[str, Any],
+        run_tool_request_data: dict[str, Any],
         mock_auth_middleware: None,
     ) -> None:
-        """Test error handling when skill is not found for agent."""
-        # Setup - Create a definition with an agent but no skills
-        agent_without_skills = {
+        """Test error handling when tool is not found for agent."""
+        # Setup - Create a definition with an agent but no tools
+        agent_without_tools = {
             "name": TEST_AGENT_NAME,
             "slug": "test-agent-slug",
-            "skills": [],  # Empty skills list
+            "tools": [],  # Empty tools list
         }
-        definition = {"agents": {"test-agent-id": agent_without_skills}}
+        definition = {"agents": {TEST_AGENT_KEY: agent_without_tools}}
 
         # Setup mocks
         mock_lambda_client = mocker.MagicMock()
@@ -599,7 +602,7 @@ class TestRunSkillEndpoint:
         mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
 
         # Modify the request data
-        modified_data = run_skill_request_data.copy()
+        modified_data = run_tool_request_data.copy()
         modified_data["definition"] = json.dumps(definition)
 
         # Make the request
@@ -607,7 +610,7 @@ class TestRunSkillEndpoint:
         api_path = f"{settings.API_PREFIX}/v1/runs"
 
         files = {
-            "skill": ("test_skill.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
+            "tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
         }
 
         response = client.post(
@@ -630,25 +633,25 @@ class TestRunSkillEndpoint:
         # Check for error message
         error_responses = [r for r in response_data if r.get("success") is False]
         assert len(error_responses) > 0
-        assert f"Could not find skill {TEST_SKILL_NAME}" in str(error_responses[-1])
+        assert f"Could not find tool {TEST_TOOL_KEY}" in str(error_responses[-1])
 
-    def test_empty_skill_zip_bytes(
+    def test_empty_tool_zip_bytes(
         self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture, mock_auth_middleware: None
     ) -> None:
-        """Test error handling when skill_zip_bytes is empty after processing."""
-        # Setup - mock process_skill to return None for skill_zip_bytes
+        """Test error handling when tool_zip_bytes is empty after processing."""
+        # Setup - mock process_tool to return None for tool_zip_bytes
         mock_process_result = {
-            "message": "Skill processed successfully",
+            "message": "Tool processed successfully",
             "data": {
-                "skill_name": TEST_SKILL_NAME,
+                "tool_key": TEST_TOOL_KEY,
             },
             "success": True,
-            "code": "SKILL_PROCESSED",
+            "code": "TOOL_PROCESSED",
         }
         mocker.patch(
-            "app.api.v1.routers.runs.process_skill",
+            "app.api.v1.routers.runs.process_tool",
             new=AsyncMock(
-                return_value=(mock_process_result, None)  # Return None for skill_zip_bytes
+                return_value=(mock_process_result, None)  # Return None for tool_zip_bytes
             ),
         )
 
@@ -672,4 +675,4 @@ class TestRunSkillEndpoint:
         # Check for error message
         error_responses = [r for r in response_data if r.get("success") is False]
         assert len(error_responses) > 0
-        assert "Failed to process skill" in str(error_responses[-1])
+        assert "Failed to process tool" in str(error_responses[-1])

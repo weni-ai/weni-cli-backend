@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -15,10 +16,13 @@ EXPECTED_CALL_COUNT_TWO = 2
 # Constants for test data
 TEST_FUNCTION_NAME = "test-function"
 TEST_LOG_GROUP_NAME = settings.AGENT_LOG_GROUP
-TEST_START_TIME_MS_REDUCED = 1609459200000 - 60000  # 2020-12-31T23:59:00Z in milliseconds
 TEST_START_TIME = 1609459200  # 2021-01-01T00:00:00Z in seconds
+TEST_START_TIME_MS = TEST_START_TIME * 1000  # 2021-01-01T00:00:00Z in milliseconds
+TEST_START_TIME_DATETIME = datetime.fromtimestamp(TEST_START_TIME, UTC)
 TEST_END_TIME = 1609459260  # 2021-01-01T00:01:00Z in seconds
-TEST_END_TIME_MS_ADDED = 1609459260000 + 60000  # 2021-01-01T00:01:00Z in milliseconds
+TEST_END_TIME_MS = TEST_END_TIME * 1000  # 2021-01-01T00:01:00Z in milliseconds
+TEST_END_TIME_DATETIME = datetime.fromtimestamp(TEST_END_TIME, UTC) 
+TEST_LOG_GROUP_ARN = "log-group-arn"
 MAX_RETRIES = 5
 RETRY_DELAY = 5  # seconds
 MOCK_REQUEST_ID = "1234567890"
@@ -95,77 +99,24 @@ class TestAWSLogsClient:
         mock_logs_client.filter_log_events.return_value = {"events": test_log_events}
 
         # Execute
-        result = await logs_client.get_function_logs(
-            function_name=TEST_FUNCTION_NAME,
-            request_id=MOCK_REQUEST_ID,
-            start_time=TEST_START_TIME,
-            end_time=TEST_END_TIME,
+        result, _ = await logs_client.get_function_logs(
+            log_group_arn=TEST_LOG_GROUP_ARN,
+            start_time=TEST_START_TIME_DATETIME,
+            end_time=TEST_END_TIME_DATETIME,
+            filter_pattern=f'"{MOCK_REQUEST_ID}"',
         )
 
         # Assert
         mock_logs_client.filter_log_events.assert_called_once_with(
-            logGroupName=TEST_LOG_GROUP_NAME,
-            startTime=TEST_START_TIME_MS_REDUCED,
-            endTime=TEST_END_TIME_MS_ADDED,
-            filterPattern=f'"{MOCK_REQUEST_ID}"',
+            logGroupIdentifier=TEST_LOG_GROUP_ARN,
+            startTime=TEST_START_TIME_MS,
+            endTime=TEST_END_TIME_MS,
+            limit=1000,
+            filterPattern=f'""{MOCK_REQUEST_ID}"" -"START RequestId" -"END RequestId" -"REPORT RequestId" -"INIT_START Runtime Version"',  # noqa: E501
         )
         # The logs should be sorted by timestamp
         assert result == sorted(test_log_events, key=lambda x: x["timestamp"])
 
-    @pytest.mark.asyncio
-    async def test_get_function_logs_resource_not_found_then_success(
-        self, logs_client: AWSLogsClient, mock_logs_client: Any, mock_sleep: Any, test_log_events: list[dict[str, Any]]
-    ) -> None:
-        """
-        Test when logs are not found initially but then become available.
-        """
-        # Setup
-        mock_logs_client.filter_log_events.side_effect = [
-            MockResourceNotFoundError("Log group not found"),  # First call raises exception
-            {"events": test_log_events},  # Second call succeeds
-        ]
-
-        # Execute
-        result = await logs_client.get_function_logs(
-            function_name=TEST_FUNCTION_NAME,
-            request_id=MOCK_REQUEST_ID,
-            start_time=TEST_START_TIME,
-            end_time=TEST_END_TIME,
-        )
-
-        # Assert
-        assert mock_logs_client.filter_log_events.call_count == EXPECTED_CALL_COUNT_TWO
-        assert mock_sleep.call_count == EXPECTED_CALL_COUNT_ONE
-        assert mock_sleep.call_args[0][0] == RETRY_DELAY
-        assert result == sorted(test_log_events, key=lambda x: x["timestamp"])
-
-    @pytest.mark.asyncio
-    async def test_get_function_logs_max_retries_exceeded(
-        self, logs_client: AWSLogsClient, mock_logs_client: Any, mock_sleep: Any
-    ) -> None:
-        """
-        Test when logs are not found after max retries.
-        """
-        # Setup
-        # Create enough ResourceNotFoundError exceptions to exceed max_retries
-        mock_logs_client.filter_log_events.side_effect = [
-            MockResourceNotFoundError("Log group not found")
-        ] * MAX_RETRIES
-
-        # Execute and Assert
-        # After max_retries, an empty list should be returned
-        assert (
-            await logs_client.get_function_logs(
-                function_name=TEST_FUNCTION_NAME,
-                request_id=MOCK_REQUEST_ID,
-                start_time=TEST_START_TIME,
-                end_time=TEST_END_TIME,
-            )
-            == []
-        )
-
-        assert mock_logs_client.filter_log_events.call_count == MAX_RETRIES
-        assert mock_sleep.call_count == MAX_RETRIES
 
     @pytest.mark.asyncio
     async def test_get_function_logs_other_exception(self, logs_client: AWSLogsClient, mock_logs_client: Any) -> None:
@@ -179,10 +130,10 @@ class TestAWSLogsClient:
         # Execute and Assert
         with pytest.raises(Exception) as exc_info:
             await logs_client.get_function_logs(
-                function_name=TEST_FUNCTION_NAME,
-                request_id=MOCK_REQUEST_ID,
-                start_time=TEST_START_TIME,
-                end_time=TEST_END_TIME,
+                log_group_arn=TEST_LOG_GROUP_ARN,
+                start_time=TEST_START_TIME_DATETIME,
+                end_time=TEST_END_TIME_DATETIME,
+                filter_pattern=f'{MOCK_REQUEST_ID}',
             )
 
         assert exc_info.value is test_exception

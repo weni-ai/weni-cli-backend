@@ -1,0 +1,65 @@
+import sentry_sdk
+from sentry_sdk.integrations.aws_lambda import AwsLambdaIntegration
+
+sentry_sdk.init(
+    dsn="{sentry_dsn}",
+    integrations=[AwsLambdaIntegration()],
+    traces_sample_rate=1.0,
+)
+
+
+import json
+
+from weni.context import Context
+from tool.{module} import {class_name}
+
+
+def lambda_handler(event, context):
+    actionGroup = event.get('actionGroup')
+    function = event.get('function')
+    parameters = event.get('parameters', [])
+    session_attributes = event.get('sessionAttributes')
+
+    credentials = {}
+    try:
+        credentials = json.loads(session_attributes.get('credentials'))
+    except:
+        credentials = {}
+
+    globals = {}
+    try:
+        globals = json.loads(session_attributes.get('globals'))
+    except:
+        globals = {}
+
+    parameters_map = {}
+    for param in parameters:
+        parameters_map[param["name"]] = param["value"]
+            
+    context: Context = Context(credentials=credentials, parameters=parameters_map, globals=globals)
+
+    try:
+        result, format = {class_name}(context)
+    except Exception as error:
+        sentry_sdk.capture_exception(error)
+        raise error
+
+    responseBody = {
+        "TEXT": {
+            "body": json.dumps(result)
+        }
+    }
+
+    action_response = {
+        'actionGroup': actionGroup,
+        'function': function,
+        'functionResponse': {
+            'responseBody': responseBody
+        },
+        'promptSessionAttributes': {
+            'alwaysFormat': f"<example>{format}</example>"
+        }
+    }
+
+    dummy_function_response = {'response': action_response, 'messageVersion': '1.0'}
+    return dummy_function_response

@@ -34,13 +34,16 @@ class Settings(BaseSettings):
     # Connect settings
     WENI_API_URL: str = "https://api.weni.ai"
 
+    # Gallery settings
+    GALLERY_BASE_URL: str = "https://gallery.weni.ai"
+
     # CLI settings
     CLI_MINIMUM_VERSION: str = "0.1.0"
 
     # AWS settings
     AGENT_RESOURCE_ROLE_ARN: str = ""
     AGENT_LOG_GROUP: str = ""
-    AWS_REGION: str = "us-east-1"
+    AWS_REGION_NAME: str = "us-east-1"
 
     # Sentry settings
     SENTRY_DSN: str = ""

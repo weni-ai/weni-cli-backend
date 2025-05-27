@@ -1,11 +1,5 @@
-import json
-
 import sentry_sdk
 from sentry_sdk.integrations.aws_lambda import AwsLambdaIntegration
-
-from weni.context import Context
-from skill.{module} import {class_name}
-
 
 sentry_sdk.init(
     dsn="{sentry_dsn}",
@@ -22,6 +16,12 @@ def load_value(data):
         value = {}
 
     return value
+
+
+import json
+
+from weni.context import Context
+from tool.{module} import {class_name}
 
 
 def lambda_handler(event, context):
