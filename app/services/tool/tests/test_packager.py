@@ -235,7 +235,7 @@ class TestBuildLambdaFunctionFile:
         assert f"from tool.{module_name} import {class_name}" in result
         assert f"result, format = {class_name}(context)" in result
         # Ensure other parts of the template are intact
-        assert "json.loads(session_attributes.get('credentials'))" in result
+        assert "load_value(session_attributes.get('credentials'))" in result
         assert "promptSessionAttributes" in result
 
     def test_template_not_found(self, mocker: MockerFixture, packager: Packager) -> None:
