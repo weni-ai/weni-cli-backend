@@ -108,5 +108,4 @@ def lambda_handler(event, context):
         "template": template,
         "template_variables": template_variables,
         "contact_urn": preprocess_result.urn,
-        "language": preprocess_result.language
     }
