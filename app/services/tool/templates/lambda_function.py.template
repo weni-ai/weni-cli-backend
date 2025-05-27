@@ -33,13 +33,20 @@ def lambda_handler(event, context):
 
     credentials = load_value(session_attributes.get('credentials'))
     globals = load_value(session_attributes.get('globals'))
-    contact = load_value(prompt_session_attributes.get('contact'))
+    contact = load_value(session_attributes.get('contact'))
+    project = load_value(session_attributes.get('project'))
 
     parameters_map = {}
     for param in parameters:
         parameters_map[param["name"]] = param["value"]
 
-    context: Context = Context(credentials=credentials, parameters=parameters_map, globals=globals, contact=contact)
+    context: Context = Context(
+        credentials=credentials,
+        parameters=parameters_map,
+        globals=globals,
+        contact=contact,
+        project=project
+    )
 
     try:
         result, format = {class_name}(context)
