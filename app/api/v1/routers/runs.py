@@ -172,13 +172,21 @@ async def run_tool_test(  # noqa: PLR0915
                     lambda_function.arn, test_event
                 )
 
+                response_data = invoke_result.get("response", {})
+                # Check if there's an error in the response
+                has_error = (
+                    response_data.get("errorMessage") is not None
+                    or response_data.get("errorType") is not None
+                    or response_data.get("error") is not None
+                )
+
                 test_response: CLIResponse = {
                     "message": "Test case completed",
                     "data": {
                         "test_case": test_case,
                         "logs": invoke_result.get("logs"),
                         "duration": invoke_end_time - invoke_start_time,
-                        "test_status_code": invoke_result.get("status_code"),
+                        "test_status_code": 400 if has_error else invoke_result.get("status_code", 200),
                         "test_response": invoke_result.get("response"),
                     },
                     "success": True,
