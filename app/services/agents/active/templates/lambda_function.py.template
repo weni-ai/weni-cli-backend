@@ -65,12 +65,13 @@ def lambda_handler(event, context):
     credentials = event.get("credentials", {}) # TODO: Check this
     ignored_official_rules_keys = event.get("ignored_official_rules", [])
     project_rules = event.get("project_rules", [])
+    project = event.get("project", {})
 
     # Rule class to template mapping
     rule_class_to_template_map = {rule_class_to_template}
     classname_to_key_map = {classname_to_key_map}
 
-    context: Context = PreProcessorContext(credentials=credentials, params=params, payload=payload)
+    context: Context = PreProcessorContext(credentials=credentials, params=params, payload=payload, project=project)
 
     # Apply preprocessing
     try:
