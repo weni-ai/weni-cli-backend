@@ -199,7 +199,7 @@ async def test_configure_agents_push_failure(
     assert error_msg["success"] is False
     assert error_msg["message"] == "Failed to send agents to Gallery"
     assert error_msg["data"]["error_code"] == "GALLERY_ERROR"
-    assert error_msg["data"]["status_code"] == 500
+    assert error_msg["data"]["status_code"] == 500  # noqa: PLR2004
 
 
 @pytest.mark.asyncio
@@ -241,9 +241,11 @@ async def test_configure_agents_processing_error(
     assert len(error_messages) > 0
     error_msg = error_messages[0]
     assert error_msg["success"] is False
-    assert error_msg["message"] == "Failed to process agent agent1. Please verify if all required files were provided."
+    assert error_msg["message"] == (
+        "Failed to process agent agent1. Please verify if all required files were provided."
+    )
     assert error_msg["data"]["error_code"] == "AGENT_PROCESSING_ERROR"
-    assert error_msg["data"]["status_code"] == 400
+    assert error_msg["data"]["status_code"] == 400  # noqa: PLR2004
     assert error_msg["data"]["agent_key"] == "agent1"
 
     mock_active_agent_processor.return_value.process.assert_called_once_with("agent1")
@@ -284,8 +286,10 @@ def test_push_to_gallery_http_error(
     assert isinstance(response_data, dict)
     assert response_data["message"] == "Failed to send agents to Gallery"
     assert response_data["data"]["error_code"] == "GALLERY_ERROR"
-    assert response_data["data"]["status_code"] == 400
-    mock_logger.info.assert_any_call(f"Sending {len(agents_lambda_map)} processed agents to Gallery for project {configurator.project_uuid}")
+    assert response_data["data"]["status_code"] == 400  # noqa: PLR2004
+    mock_logger.info.assert_any_call(
+        f"Sending {len(agents_lambda_map)} processed agents to Gallery for project {configurator.project_uuid}"
+    )
 
 
 def test_push_to_gallery_400_bad_request_with_details(
@@ -295,7 +299,10 @@ def test_push_to_gallery_400_bad_request_with_details(
     mock_client_instance = mock_gallery_client.return_value
     mock_response_obj = mocker.MagicMock()
     mock_response_obj.status_code = status.HTTP_400_BAD_REQUEST
-    mock_response_obj.json.return_value = {"detail": "Invalid agent configuration", "code": "INVALID_CONFIG"}
+    mock_response_obj.json.return_value = {
+        "detail": "Invalid agent configuration",
+        "code": "INVALID_CONFIG"
+    }
     mock_client_instance.push_agents.return_value = mock_response_obj
 
     agents_lambda_map = {"agent1": BytesIO(b"lambda1")}
@@ -305,8 +312,10 @@ def test_push_to_gallery_400_bad_request_with_details(
     assert isinstance(response_data, dict)
     assert response_data["message"] == "Invalid agent configuration"
     assert response_data["data"]["error_code"] == "INVALID_CONFIG"
-    assert response_data["data"]["status_code"] == 400
-    mock_logger.info.assert_any_call(f"Sending {len(agents_lambda_map)} processed agents to Gallery for project {configurator.project_uuid}")
+    assert response_data["data"]["status_code"] == 400  # noqa: PLR2004
+    mock_logger.info.assert_any_call(
+        f"Sending {len(agents_lambda_map)} processed agents to Gallery for project {configurator.project_uuid}"
+    )
 
 
 def test_push_to_gallery_exception(
@@ -349,9 +358,9 @@ async def test_configure_agents_syntax_error(
 
     # Setup mock to raise SyntaxError
     syntax_error_msg = (
-        "invalid syntax in rule_StatusAprovado.py, line 25\n" +
-        "    if status == 'APPROVED'\n" +
-        "                          ^\n" +
+        "invalid syntax in rule_StatusAprovado.py, line 25\n"
+        "    if status == 'APPROVED'\n"
+        "                          ^\n"
         "SyntaxError: expected ':'"
     )
     mock_active_agent_processor.return_value.process.side_effect = SyntaxError(syntax_error_msg)
@@ -365,7 +374,7 @@ async def test_configure_agents_syntax_error(
         stream_chunks.append(json.loads(chunk.decode("utf-8")))
 
     # Check initial message
-    assert len(stream_chunks) == 2  # Initial message + error message
+    assert len(stream_chunks) == 2  # noqa: PLR2004
     assert stream_chunks[0] == {
         "message": "Starting agent processing...",
         "data": {
@@ -382,6 +391,6 @@ async def test_configure_agents_syntax_error(
     assert error_response["success"] is False
     assert error_response["message"] == f"Syntax error processing agent agent1: {syntax_error_msg}"
     assert error_response["data"]["error_code"] == "SYNTAX_ERROR"
-    assert error_response["data"]["status_code"] == 400
+    assert error_response["data"]["status_code"] == 400  # noqa: PLR2004
     assert error_response["data"]["agent_key"] == "agent1"
     assert error_response["data"]["error_details"] == syntax_error_msg
