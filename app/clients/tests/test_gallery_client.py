@@ -117,3 +117,59 @@ class TestGalleryClient:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.json() == mock_error_data
+
+    def test_push_agents_authentication_error(
+        self,
+        requests_mock: requests_mock.Mocker,
+        gallery_client: GalleryClient,
+        agents_definition: dict,
+        rules_files: dict,
+    ) -> None:
+        """Test push_agents method when receiving an authentication error."""
+        expected_url = f"{settings.GALLERY_BASE_URL}/api/v3/agents/push/"
+        mock_error_data = {
+            "detail": "Token de autenticação inválido ou expirado",
+            "code": "AUTHENTICATION_ERROR"
+        }
+
+        requests_mock.post(
+            expected_url, 
+            json=mock_error_data, 
+            status_code=status.HTTP_401_UNAUTHORIZED
+        )
+
+        response = gallery_client.push_agents(
+            agents_definition=agents_definition, 
+            rules_files=rules_files
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json() == mock_error_data
+
+    def test_push_agents_project_not_found(
+        self,
+        requests_mock: requests_mock.Mocker,
+        gallery_client: GalleryClient,
+        agents_definition: dict,
+        rules_files: dict,
+    ) -> None:
+        """Test push_agents method when the project is not found."""
+        expected_url = f"{settings.GALLERY_BASE_URL}/api/v3/agents/push/"
+        mock_error_data = {
+            "detail": "Projeto não encontrado",
+            "code": "PROJECT_NOT_FOUND"
+        }
+
+        requests_mock.post(
+            expected_url, 
+            json=mock_error_data, 
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+
+        response = gallery_client.push_agents(
+            agents_definition=agents_definition, 
+            rules_files=rules_files
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json() == mock_error_data
