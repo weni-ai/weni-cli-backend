@@ -1,9 +1,11 @@
 import json
-from unittest.mock import patch
-import pytest
-from fastapi import status
-from app.clients.gallery_client import GalleryClient
 from io import BytesIO
+from unittest.mock import patch
+
+from fastapi import status
+
+from app.clients.gallery_client import GalleryClient
+
 
 def test_gallery_push_agents_400():
     """Test pushing agents to Gallery with mocked 400 response."""
