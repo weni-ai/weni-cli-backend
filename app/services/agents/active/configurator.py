@@ -31,28 +31,38 @@ class ActiveAgentConfigurator(AgentConfigurator):
         # Async generator for streaming responses
         async def response_stream() -> AsyncIterator[bytes]:  # noqa: PLR0915
             try:
-                if not await self._validate_resources(agent_resources_entries, response_status):
+                success, response = self._validate_resources(agent_resources_entries, response_status)
+                if not success:
+                    if response:
+                        yield response
                     return
 
                 # Initial message
-                yield await self._send_initial_message(resource_count)
+                yield self._send_initial_message(resource_count)
 
                 # Process resources
-                agents_resources = await self._process_resources(agent_resources_entries)
+                agents_resources, response = self._process_resources(agent_resources_entries)
                 if not agents_resources:
+                    if response:
+                        yield response
                     return
 
                 # Process agents
-                agents_lambda_map = await self._process_agents(agents_resources)
+                agents_lambda_map, response = await self._process_agents(agents_resources)
                 if not agents_lambda_map:
+                    if response:
+                        yield response
                     return
 
                 # Push to gallery
-                if not await self._push_agents_to_gallery(agents_lambda_map, response_status):
+                success, response = self._push_agents_to_gallery(agents_lambda_map, response_status)
+                if not success:
+                    if response:
+                        yield response
                     return
 
                 # Final message
-                yield await self._send_final_message(resource_count, len(agents_lambda_map))
+                yield self._send_final_message(resource_count, len(agents_lambda_map))
 
             except Exception as e:
                 response_status["code"] = status.HTTP_400_BAD_REQUEST  # noqa: PLR2004
@@ -75,11 +85,11 @@ class ActiveAgentConfigurator(AgentConfigurator):
             status_code=response_status["code"]
         )
 
-    async def _validate_resources(
+    def _validate_resources(
         self,
         agent_resources_entries: list[tuple[str, bytes]],
         response_status: dict
-    ) -> bool:
+    ) -> tuple[bool, bytes | None]:
         if not agent_resources_entries:
             response_status["code"] = status.HTTP_400_BAD_REQUEST  # noqa: PLR2004
             error_response: CLIResponse = {
@@ -92,11 +102,10 @@ class ActiveAgentConfigurator(AgentConfigurator):
                     "status_code": 400  # noqa: PLR2004
                 }
             }
-            await send_response(error_response, request_id=self.request_id)
-            return False
-        return True
+            return False, send_response(error_response, request_id=self.request_id)
+        return True, None
 
-    async def _send_initial_message(self, resource_count: int) -> bytes:
+    def _send_initial_message(self, resource_count: int) -> bytes:
         initial_data: CLIResponse = {
             "message": "Starting agent processing...",
             "data": {
@@ -110,10 +119,10 @@ class ActiveAgentConfigurator(AgentConfigurator):
         logger.info(f"Starting processing for {resource_count} rules")
         return send_response(initial_data, request_id=self.request_id)
 
-    async def _process_resources(
+    def _process_resources(
         self,
         agent_resources_entries: list[tuple[str, bytes]]
-    ) -> dict[str, ActiveAgentResourceModel] | None:
+    ) -> tuple[dict[str, ActiveAgentResourceModel] | None, bytes | None]:
         agents_resources: dict[str, ActiveAgentResourceModel] = {}
         for key, resource in agent_resources_entries:
             try:
@@ -130,8 +139,7 @@ class ActiveAgentConfigurator(AgentConfigurator):
                         "resource_key": key
                     }
                 }
-                await send_response(error_response, request_id=self.request_id)
-                return None
+                return None, send_response(error_response, request_id=self.request_id)
 
             if not agents_resources.get(agent_key):
                 agents_resources[agent_key] = ActiveAgentResourceModel(
@@ -140,18 +148,19 @@ class ActiveAgentConfigurator(AgentConfigurator):
                     preprocessor_example=None,
                 )
 
-            if not await self._process_resource(agent_key, resource_key, resource, agents_resources):
-                return None
+            success, response = self._process_resource(agent_key, resource_key, resource, agents_resources)
+            if not success:
+                return None, response
 
-        return agents_resources
+        return agents_resources, None
 
-    async def _process_resource(
+    def _process_resource(
         self,
         agent_key: str,
         resource_key: str,
         resource: bytes,
         agents_resources: dict[str, ActiveAgentResourceModel]
-    ) -> bool:
+    ) -> tuple[bool, bytes | None]:
         try:
             if resource_key == PREPROCESSOR_RESOURCE_KEY:
                 agents_resources[agent_key].preprocessor = self.mount_preprocessor_resource(
@@ -163,7 +172,7 @@ class ActiveAgentConfigurator(AgentConfigurator):
                 agents_resources[agent_key].rules.append(
                     self.mount_rule_resource(agent_key, resource_key, self.definition, resource)
                 )
-            return True
+            return True, None
         except Exception as e:
             error_code = "PREPROCESSOR_ERROR" if resource_key == PREPROCESSOR_RESOURCE_KEY else "RULE_PROCESSING_ERROR"
             error_response: CLIResponse = {
@@ -178,13 +187,12 @@ class ActiveAgentConfigurator(AgentConfigurator):
                     "resource_key": resource_key
                 }
             }
-            await send_response(error_response, request_id=self.request_id)
-            return False
+            return False, send_response(error_response, request_id=self.request_id)
 
     async def _process_agents(
         self,
         agents_resources: dict[str, ActiveAgentResourceModel]
-    ) -> dict[str, BytesIO] | None:
+    ) -> tuple[dict[str, BytesIO] | None, bytes | None]:
         agents_lambda_map = {}
 
         # Check if all agents have preprocessor
@@ -201,20 +209,20 @@ class ActiveAgentConfigurator(AgentConfigurator):
                         "agent_key": agent_key
                     }
                 }
-                await send_response(error_response, request_id=self.request_id)
-                return None
+                return None, send_response(error_response, request_id=self.request_id)
 
-            if not await self._process_agent(agent_key, agent_resource, agents_lambda_map):
-                return None
+            success, response = await self._process_agent(agent_key, agent_resource, agents_lambda_map)
+            if not success:
+                return None, response
 
-        return agents_lambda_map
+        return agents_lambda_map, None
 
     async def _process_agent(
         self,
         agent_key: str,
         agent_resource: ActiveAgentResourceModel,
         agents_lambda_map: dict[str, BytesIO]
-    ) -> bool:
+    ) -> tuple[bool, bytes | None]:
         logger.info(f"Processing agent: {agent_key}")
         try:
             processor = ActiveAgentProcessor(
@@ -239,8 +247,7 @@ class ActiveAgentConfigurator(AgentConfigurator):
                         "agent_key": agent_key
                     }
                 }
-                await send_response(error_response, request_id=self.request_id)
-                return False
+                return False, send_response(error_response, request_id=self.request_id)
 
             agents_lambda_map[agent_key] = agent_lambda
 
@@ -250,7 +257,7 @@ class ActiveAgentConfigurator(AgentConfigurator):
                     agent_resource.preprocessor_example
                 )
 
-            return True
+            return True, None
         except SyntaxError as e:
             error_response: CLIResponse = {
                 "success": False,
@@ -264,8 +271,7 @@ class ActiveAgentConfigurator(AgentConfigurator):
                     "error_details": str(e)
                 }
             }
-            await send_response(error_response, request_id=self.request_id)
-            return False
+            return False, send_response(error_response, request_id=self.request_id)
         except Exception as e:
             error_response: CLIResponse = {
                 "success": False,
@@ -279,14 +285,13 @@ class ActiveAgentConfigurator(AgentConfigurator):
                     "error_details": str(e)
                 }
             }
-            await send_response(error_response, request_id=self.request_id)
-            return False
+            return False, send_response(error_response, request_id=self.request_id)
 
-    async def _push_agents_to_gallery(
+    def _push_agents_to_gallery(
         self,
         agents_lambda_map: dict[str, BytesIO],
         response_status: dict
-    ) -> bool:
+    ) -> tuple[bool, bytes | None]:
         logger.info(f"Sending {len(agents_lambda_map)} agents to Gallery")
         success, response = self.push_to_gallery(agents_lambda_map)
 
@@ -295,11 +300,10 @@ class ActiveAgentConfigurator(AgentConfigurator):
                 "status_code",
                 status.HTTP_400_BAD_REQUEST  # noqa: PLR2004
             )
-            await send_response(response, request_id=self.request_id)
-            return False
-        return True
+            return False, send_response(response, request_id=self.request_id)
+        return True, None
 
-    async def _send_final_message(self, resource_count: int, processed_count: int) -> bytes:
+    def _send_final_message(self, resource_count: int, processed_count: int) -> bytes:
         final_data: CLIResponse = {
             "message": "Agents processed successfully",
             "data": {
