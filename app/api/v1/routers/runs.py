@@ -162,6 +162,8 @@ async def run_tool_test(  # noqa: PLR0915
                     "function": lambda_function.name,
                     "parameters": parameters,
                     "sessionAttributes": {
+                        "project": json.dumps(test_data.get("project", {})),
+                        "contact": json.dumps(test_data.get("contact", {})),
                         "credentials": json.dumps(test_data.get("credentials", data.tool_credentials)),
                         "globals": json.dumps(test_data.get("globals", data.tool_globals)),
                     },
