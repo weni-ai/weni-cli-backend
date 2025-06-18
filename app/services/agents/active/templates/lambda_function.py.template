@@ -103,6 +103,7 @@ def lambda_handler(event, context):
     try:
         preprocess_result = {preprocessor_class}(context)
     except Exception as error:
+        sentry_sdk.capture_exception(error)
         return LambdaResponse(
             status=ResponseStatus.PREPROCESSING_FAILED,
             template=None,
@@ -118,6 +119,7 @@ def lambda_handler(event, context):
     
         template, template_variables = select_template_project_rules(preprocess_result.data, project_rules)
     except Exception as error:
+        sentry_sdk.capture_exception(error)
         return LambdaResponse(
             status=ResponseStatus.CUSTOM_RULE_FAILED,
             template=None,
@@ -138,6 +140,7 @@ def lambda_handler(event, context):
                 ignored_official_rules_keys
             )
     except Exception as error:
+        sentry_sdk.capture_exception(error)
         return LambdaResponse(
             status=ResponseStatus.OFFICIAL_RULE_FAILED,
             template=None,
