@@ -110,7 +110,7 @@ def lambda_handler(event, context):
             template=None,
             template_variables={},
             contact_urn=None,
-            error=error
+            error=str(error)
         ).to_dict()
 
     # Try our project rules
@@ -126,7 +126,7 @@ def lambda_handler(event, context):
             template=None,
             template_variables={},
             contact_urn=None,
-            error=error
+            error=str(error)
         ).to_dict()
 
     # Project rules did not match, try our official rules
@@ -147,7 +147,7 @@ def lambda_handler(event, context):
             template=None,
             template_variables={},
             contact_urn=None,
-            error=error
+            error=str(error)
         ).to_dict()
 
     if not template:
