@@ -12,6 +12,7 @@ import json
 
 from enum import Enum
 from weni.rules import Rule
+from weni.preprocessor import PreProcessor, ProcessedData
 from weni.context import PreProcessorContext
 from preprocessor.{preprocessor_module} import {preprocessor_class}
 {official_rules_imports}
