@@ -10,6 +10,9 @@ sentry_sdk.init(
 
 import json
 
+from enum import Enum
+from weni.rules import Rule
+from weni.preprocessor import PreProcessor, ProcessedData
 from weni.context import PreProcessorContext
 from preprocessor.{preprocessor_module} import {preprocessor_class}
 {official_rules_imports}
@@ -58,6 +61,30 @@ def initialize_rule(rule):
     instance = locals()[rule_class]()
     return instance
 
+class ResponseStatus(Enum):
+    RULE_MATCHED = 0
+    RULE_NOT_MATCHED = 1
+    PREPROCESSING_FAILED = 2
+    CUSTOM_RULE_FAILED = 3
+    OFFICIAL_RULE_FAILED = 4
+
+class LambdaResponse:
+    def __init__(self, status: ResponseStatus, template: str, template_variables: dict, contact_urn: str, error: dict = {}):
+        self.status = status
+        self.template = template
+        self.template_variables = template_variables
+        self.contact_urn = contact_urn
+        self.error = error
+
+    def to_dict(self):
+        return {
+            "status": self.status.value,
+            "template": self.template,
+            "template_variables": self.template_variables,
+            "contact_urn": self.contact_urn,
+            "error": self.error,
+        }
+
 
 def lambda_handler(event, context):
     payload = event.get("payload", {})
@@ -76,14 +103,34 @@ def lambda_handler(event, context):
     # Apply preprocessing
     try:
         preprocess_result = {preprocessor_class}(context)
+    except Exception as error:
+        sentry_sdk.capture_exception(error)
+        return LambdaResponse(
+            status=ResponseStatus.PREPROCESSING_FAILED,
+            template=None,
+            template_variables={},
+            contact_urn=None,
+            error=error
+        ).to_dict()
 
-        # Try our project rules
+    # Try our project rules
+    try:
         for rule in project_rules:
             rule["instance"] = initialize_rule(rule)
-        
+    
         template, template_variables = select_template_project_rules(preprocess_result.data, project_rules)
+    except Exception as error:
+        sentry_sdk.capture_exception(error)
+        return LambdaResponse(
+            status=ResponseStatus.CUSTOM_RULE_FAILED,
+            template=None,
+            template_variables={},
+            contact_urn=None,
+            error=error
+        ).to_dict()
 
-        # Project rules did not match, try our official rules
+    # Project rules did not match, try our official rules
+    try:
         if not template:
             official_rules = [{official_rules_instances}]
             template, template_variables = select_template_official_rules(
@@ -93,20 +140,29 @@ def lambda_handler(event, context):
                 rule_class_to_template_map,
                 ignored_official_rules_keys
             )
-
-        if not template:
-            raise Exception("Missing template", {
-                "preprocess_result": preprocess_result,
-                "template": template,
-                "template_variables": template_variables
-            })
-
     except Exception as error:
         sentry_sdk.capture_exception(error)
-        raise error
+        return LambdaResponse(
+            status=ResponseStatus.OFFICIAL_RULE_FAILED,
+            template=None,
+            template_variables={},
+            contact_urn=None,
+            error=error
+        ).to_dict()
 
-    return {
-        "template": template,
-        "template_variables": template_variables,
-        "contact_urn": preprocess_result.urn,
-    }
+    if not template:
+        return LambdaResponse(
+            status=ResponseStatus.RULE_NOT_MATCHED,
+            template=None,
+            template_variables={},
+            contact_urn=None,
+            error={"message": "No template found"}
+        ).to_dict()
+
+
+    return LambdaResponse(
+        status=ResponseStatus.RULE_MATCHED,
+        template=template,
+        template_variables=template_variables,
+        contact_urn=preprocess_result.urn,
+    ).to_dict()
