@@ -90,7 +90,7 @@ async def test_configure_agents_success(
     agent_resources_entries = [
         ("agent1:rule1", b"rule1_content"),
         (f"agent1:{PREPROCESSOR_RESOURCE_KEY}", b"preprocessor_content"),
-        (f"agent1:{PREPROCESSOR_OUTPUT_EXAMPLE_KEY}", b"example_content"),
+        (f"agent1:{PREPROCESSOR_OUTPUT_EXAMPLE_KEY}", b'{"example": "content"}'),
     ]
     resource_count = len(agent_resources_entries)
 
@@ -142,14 +142,14 @@ async def test_configure_agents_success(
                 template="rule1_template",
             )
         ],
-        preprocessor_example=b"example_content",
+        preprocessor_example=b'{"example": "content"}',
     )
     mock_active_agent_processor.assert_called_once_with(
         configurator.project_uuid, configurator.toolkit_version, expected_resource_model
     )
     mock_active_agent_processor.return_value.process.assert_called_once_with("agent1")
 
-    assert configurator.definition["agents"]["agent1"]["pre-processing"]["result_example"] == b"example_content"
+    assert configurator.definition["agents"]["agent1"]["pre-processing"]["result_example"] == {"example": "content"}
 
     mock_gallery_client.assert_called_once_with(configurator.project_uuid, configurator.authorization)
     expected_lambda_map = {"agent1": BytesIO(b"lambda_zip_content")}

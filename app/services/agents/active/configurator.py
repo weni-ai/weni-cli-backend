@@ -61,8 +61,7 @@ class ActiveAgentConfigurator(AgentConfigurator):
                         agent_key, self.definition, resource
                     )
                 elif resource_key == PREPROCESSOR_OUTPUT_EXAMPLE_KEY:
-                    resource_json = json.loads(resource.decode('utf-8'))
-                    agents_resources[agent_key].preprocessor_example = resource_json
+                    agents_resources[agent_key].preprocessor_example = resource
                 else:
                     agents_resources[agent_key].rules.append(
                         self.mount_rule_resource(agent_key, resource_key, self.definition, resource)
@@ -84,8 +83,8 @@ class ActiveAgentConfigurator(AgentConfigurator):
 
                 # add the preprocessor output example to the definition if it exists
                 if agent_resource.preprocessor_example:
-                    self.definition["agents"][agent_key]["pre-processing"]["result_example"] = (
-                        agent_resource.preprocessor_example
+                    self.definition["agents"][agent_key]["pre-processing"]["result_example"] = json.loads(
+                        agent_resource.preprocessor_example.decode('utf-8')
                     )
 
             # push the agents to the gallery
