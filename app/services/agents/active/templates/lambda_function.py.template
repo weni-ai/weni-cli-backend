@@ -117,7 +117,7 @@ def lambda_handler(event, context):
         for rule in project_rules:
             rule["instance"] = initialize_rule(rule)
     
-        template, template_variables = select_template_project_rules(preprocess_result.data, project_rules)
+        template, template_variables = select_template_project_rules(preprocess_result, project_rules)
     except Exception as error:
         sentry_sdk.capture_exception(error)
         return LambdaResponse(
