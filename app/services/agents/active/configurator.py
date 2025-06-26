@@ -1,3 +1,4 @@
+import json
 import logging
 from collections.abc import AsyncIterator
 from io import BytesIO
@@ -60,7 +61,8 @@ class ActiveAgentConfigurator(AgentConfigurator):
                         agent_key, self.definition, resource
                     )
                 elif resource_key == PREPROCESSOR_OUTPUT_EXAMPLE_KEY:
-                    agents_resources[agent_key].preprocessor_example = resource
+                    resource_json = json.loads(resource.decode('utf-8'))
+                    agents_resources[agent_key].preprocessor_example = resource_json
                 else:
                     agents_resources[agent_key].rules.append(
                         self.mount_rule_resource(agent_key, resource_key, self.definition, resource)
