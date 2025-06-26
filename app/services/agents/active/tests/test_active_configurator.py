@@ -97,18 +97,8 @@ async def test_configure_agents_success(
     response = configurator.configure_agents(agent_resources_entries)
     assert isinstance(response, StreamingResponse)
 
-    stream_content = b""
-    if hasattr(response.body_iterator, "__aiter__"):
-        async for chunk in response.body_iterator:
-            assert isinstance(chunk, bytes)
-            stream_content += chunk
-    elif hasattr(response.body_iterator, "__iter__"):
-        for chunk in response.body_iterator:
-            assert isinstance(chunk, bytes)
-            stream_content += chunk
-
     expected_initial_data: CLIResponse = {
-        "message": "Processing agents...",
+        "message": "Starting agent processing...",
         "data": {"project_uuid": configurator.project_uuid, "total_files": resource_count},
         "success": True,
         "progress": 0.01,
@@ -127,8 +117,15 @@ async def test_configure_agents_success(
         "progress": 1.0,
     }
 
-    mock_send_response.assert_any_call(expected_initial_data, request_id=configurator.request_id)
-    mock_send_response.assert_any_call(expected_final_data, request_id=configurator.request_id)
+    # Consume the stream
+    stream_chunks = []
+    async for chunk in response.body_iterator:
+        assert isinstance(chunk, bytes)
+        stream_chunks.append(json.loads(chunk.decode("utf-8")))
+
+    # Check initial message
+    assert any(item == expected_initial_data for item in stream_chunks)
+    assert any(item == expected_final_data for item in stream_chunks)
     assert mock_send_response.call_count == EXPECTED_SEND_RESPONSE_CALLS_SUCCESS
 
     expected_resource_model = ActiveAgentResourceModel(
@@ -165,36 +162,44 @@ async def test_configure_agents_push_failure(
     mocker: MockerFixture, configurator: ActiveAgentConfigurator, mock_send_response: Any, mock_gallery_client: Any
 ) -> None:
     """Tests agent configuration when pushing to gallery fails."""
-    agent_resources_entries = [("agent1:rule1", b"rule1_content")]
+    agent_resources_entries = [
+        ("agent1:rule1", b"rule1_content"),
+        (f"agent1:{PREPROCESSOR_RESOURCE_KEY}", b"preprocessor_content"),
+    ]
     resource_count = len(agent_resources_entries)
 
     mock_client_instance = mock_gallery_client.return_value
     mock_response_obj = mocker.MagicMock()
     mock_response_obj.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-    mock_response_obj.text = "Gallery push failed"
+    mock_response_obj.json.return_value = {"detail": "Gallery push failed"}
     mock_client_instance.push_agents.return_value = mock_response_obj
 
     response = configurator.configure_agents(agent_resources_entries)
 
-    stream_content = b""
-    with pytest.raises(Exception, match="Unknown error while pushing agents..."):
-        if hasattr(response.body_iterator, "__aiter__"):
-            async for chunk in response.body_iterator:
-                assert isinstance(chunk, bytes)
-                stream_content += chunk
-        elif hasattr(response.body_iterator, "__iter__"):
-            for chunk in response.body_iterator:
-                assert isinstance(chunk, bytes)
-                stream_content += chunk
+    # Consume the stream
+    stream_chunks = []
+    async for chunk in response.body_iterator:
+        assert isinstance(chunk, bytes)
+        stream_chunks.append(json.loads(chunk.decode("utf-8")))
 
+    # Check initial message
     expected_initial_data: CLIResponse = {
-        "message": "Processing agents...",
+        "message": "Starting agent processing...",
         "data": {"project_uuid": configurator.project_uuid, "total_files": resource_count},
         "success": True,
         "progress": 0.01,
         "code": "PROCESSING_STARTED",
     }
-    mock_send_response.assert_any_call(expected_initial_data, request_id=configurator.request_id)
+    assert any(item == expected_initial_data for item in stream_chunks)
+
+    # Check error message
+    error_messages = [msg for msg in stream_chunks if not msg.get("success", True)]
+    assert len(error_messages) > 0
+    error_msg = error_messages[0]
+    assert error_msg["success"] is False
+    assert error_msg["message"] == "Failed to send agents to Gallery"
+    assert error_msg["data"]["error_code"] == "GALLERY_ERROR"
+    assert error_msg["data"]["status_code"] == 500  # noqa: PLR2004
 
 
 @pytest.mark.asyncio
@@ -205,31 +210,44 @@ async def test_configure_agents_processing_error(
     mock_send_response: Any,
 ) -> None:
     """Tests agent configuration when the agent processor fails."""
-    agent_resources_entries = [("agent1:rule1", b"rule1_content")]
+    agent_resources_entries = [
+        ("agent1:rule1", b"rule1_content"),
+        (f"agent1:{PREPROCESSOR_RESOURCE_KEY}", b"preprocessor_content"),
+    ]
     resource_count = len(agent_resources_entries)
 
     mock_active_agent_processor.return_value.process.return_value = None
 
     response = configurator.configure_agents(agent_resources_entries)
 
-    with pytest.raises(Exception, match="Error processing agent agent1"):
-        if hasattr(response.body_iterator, "__aiter__"):
-            async for chunk in response.body_iterator:
-                assert isinstance(chunk, bytes)
-                pass
-        elif hasattr(response.body_iterator, "__iter__"):
-            for chunk in response.body_iterator:
-                assert isinstance(chunk, bytes)
-                pass
+    # Consume the stream
+    stream_chunks = []
+    async for chunk in response.body_iterator:
+        assert isinstance(chunk, bytes)
+        stream_chunks.append(json.loads(chunk.decode("utf-8")))
 
+    # Check initial message
     expected_initial_data: CLIResponse = {
-        "message": "Processing agents...",
+        "message": "Starting agent processing...",
         "data": {"project_uuid": configurator.project_uuid, "total_files": resource_count},
         "success": True,
         "progress": 0.01,
         "code": "PROCESSING_STARTED",
     }
-    mock_send_response.assert_called_once_with(expected_initial_data, request_id=configurator.request_id)
+    assert any(item == expected_initial_data for item in stream_chunks)
+
+    # Check error message
+    error_messages = [msg for msg in stream_chunks if not msg.get("success", True)]
+    assert len(error_messages) > 0
+    error_msg = error_messages[0]
+    assert error_msg["success"] is False
+    assert error_msg["message"] == (
+        "Failed to process agent agent1. Please verify if all required files were provided."
+    )
+    assert error_msg["data"]["error_code"] == "AGENT_PROCESSING_ERROR"
+    assert error_msg["data"]["status_code"] == 400  # noqa: PLR2004
+    assert error_msg["data"]["agent_key"] == "agent1"
+
     mock_active_agent_processor.return_value.process.assert_called_once_with("agent1")
 
 
@@ -253,11 +271,12 @@ def test_push_to_gallery_success(
 def test_push_to_gallery_http_error(
     mocker: MockerFixture, configurator: ActiveAgentConfigurator, mock_gallery_client: Any, mock_logger: Any
 ) -> None:
-    """Tests push to gallery when the HTTP request fails."""
+    """Tests push to gallery when the HTTP request fails with 400 Bad Request."""
     mock_client_instance = mock_gallery_client.return_value
     mock_response_obj = mocker.MagicMock()
     mock_response_obj.status_code = status.HTTP_400_BAD_REQUEST
     mock_response_obj.text = "Bad Request"
+    mock_response_obj.json.return_value = {"detail": "Bad Request"}
     mock_client_instance.push_agents.return_value = mock_response_obj
 
     agents_lambda_map = {"agent1": BytesIO(b"lambda1")}
@@ -265,9 +284,38 @@ def test_push_to_gallery_http_error(
 
     assert success is False
     assert isinstance(response_data, dict)
-    assert response_data["message"] == "Failed to push agents to Gallery: 400 Bad Request"
-    assert response_data["success"] is False
-    mock_logger.error.assert_called_once()
+    assert response_data["message"] == "Failed to send agents to Gallery"
+    assert response_data["data"]["error_code"] == "GALLERY_ERROR"
+    assert response_data["data"]["status_code"] == 400  # noqa: PLR2004
+    mock_logger.info.assert_any_call(
+        f"Sending {len(agents_lambda_map)} processed agents to Gallery for project {configurator.project_uuid}"
+    )
+
+
+def test_push_to_gallery_400_bad_request_with_details(
+    mocker: MockerFixture, configurator: ActiveAgentConfigurator, mock_gallery_client: Any, mock_logger: Any
+) -> None:
+    """Tests push to gallery with a 400 Bad Request containing detailed error message."""
+    mock_client_instance = mock_gallery_client.return_value
+    mock_response_obj = mocker.MagicMock()
+    mock_response_obj.status_code = status.HTTP_400_BAD_REQUEST
+    mock_response_obj.json.return_value = {
+        "detail": "Invalid agent configuration",
+        "code": "INVALID_CONFIG"
+    }
+    mock_client_instance.push_agents.return_value = mock_response_obj
+
+    agents_lambda_map = {"agent1": BytesIO(b"lambda1")}
+    success, response_data = configurator.push_to_gallery(agents_lambda_map)
+
+    assert success is False
+    assert isinstance(response_data, dict)
+    assert response_data["message"] == "Invalid agent configuration"
+    assert response_data["data"]["error_code"] == "INVALID_CONFIG"
+    assert response_data["data"]["status_code"] == 400  # noqa: PLR2004
+    mock_logger.info.assert_any_call(
+        f"Sending {len(agents_lambda_map)} processed agents to Gallery for project {configurator.project_uuid}"
+    )
 
 
 def test_push_to_gallery_exception(
@@ -293,3 +341,56 @@ def test_push_to_gallery_exception(
 # Requires adjusting the loop logic slightly or mocking the split differently.
 
 # TODO: Test edge case with empty agent_resources_entries
+
+@pytest.mark.asyncio
+async def test_configure_agents_syntax_error(
+    mocker: MockerFixture,
+    configurator: ActiveAgentConfigurator,
+    mock_active_agent_processor: Any,
+    mock_send_response: Any,
+) -> None:
+    """Tests agent configuration when a syntax error occurs."""
+    agent_resources_entries = [
+        ("agent1:rule1", b"rule1_content"),
+        (f"agent1:{PREPROCESSOR_RESOURCE_KEY}", b"preprocessor_content"),
+    ]
+    resource_count = len(agent_resources_entries)
+
+    # Setup mock to raise SyntaxError
+    syntax_error_msg = (
+        "invalid syntax in rule_StatusAprovado.py, line 25\n"
+        "    if status == 'APPROVED'\n"
+        "                          ^\n"
+        "SyntaxError: expected ':'"
+    )
+    mock_active_agent_processor.return_value.process.side_effect = SyntaxError(syntax_error_msg)
+
+    response = configurator.configure_agents(agent_resources_entries)
+
+    # Consume the stream
+    stream_chunks = []
+    async for chunk in response.body_iterator:
+        assert isinstance(chunk, bytes)
+        stream_chunks.append(json.loads(chunk.decode("utf-8")))
+
+    # Check initial message
+    assert len(stream_chunks) == 2  # noqa: PLR2004
+    assert stream_chunks[0] == {
+        "message": "Starting agent processing...",
+        "data": {
+            "project_uuid": str(configurator.project_uuid),
+            "total_files": resource_count,
+        },
+        "success": True,
+        "progress": 0.01,
+        "code": "PROCESSING_STARTED",
+    }
+
+    # Check error message
+    error_response = stream_chunks[1]
+    assert error_response["success"] is False
+    assert error_response["message"] == f"Syntax error processing agent agent1: {syntax_error_msg}"
+    assert error_response["data"]["error_code"] == "SYNTAX_ERROR"
+    assert error_response["data"]["status_code"] == 400  # noqa: PLR2004
+    assert error_response["data"]["agent_key"] == "agent1"
+    assert error_response["data"]["error_details"] == syntax_error_msg
