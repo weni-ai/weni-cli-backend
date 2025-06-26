@@ -51,15 +51,14 @@ def json_load_field(field, default_value):
 def get_rule_class(scope):
     import inspect
     for key, value in scope.items():
-        if inspect.isclass(value) and issubclass(value, Rule):
-            return key
+        if inspect.isclass(value) and value is not Rule and issubclass(value, Rule):
+            return value
 
 
 def initialize_rule(rule):
     exec(rule.get("source"))
     rule_class = get_rule_class(locals())
-    instance = locals()[rule_class]()
-    return instance
+    return rule_class()
 
 class ResponseStatus(Enum):
     RULE_MATCHED = 0
@@ -118,7 +117,7 @@ def lambda_handler(event, context):
         for rule in project_rules:
             rule["instance"] = initialize_rule(rule)
     
-        template, template_variables = select_template_project_rules(preprocess_result.data, project_rules)
+        template, template_variables = select_template_project_rules(preprocess_result, project_rules)
     except Exception as error:
         sentry_sdk.capture_exception(error)
         return LambdaResponse(
