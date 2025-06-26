@@ -83,7 +83,7 @@ class ActiveAgentConfigurator(AgentConfigurator):
 
                 # add the preprocessor output example to the definition if it exists
                 if agent_resource.preprocessor_example:
-                    self.definition["agents"][agent_key]["pre-processing"]["result_example"] = json.loads(
+                    self.definition["agents"][agent_key]["pre_processing"]["result_example"] = json.loads(
                         agent_resource.preprocessor_example.decode('utf-8')
                     )
 
@@ -113,7 +113,7 @@ class ActiveAgentConfigurator(AgentConfigurator):
         return StreamingResponse(response_stream(), media_type="application/x-ndjson")
 
     def mount_preprocessor_resource(self, agent_key: str, definition: dict[str, Any], resource: bytes) -> Resource:
-        source = definition["agents"][agent_key]["pre-processing"]["source"]
+        source = definition["agents"][agent_key]["pre_processing"]["source"]
 
         module = source["entrypoint"].split(".")[0]
         class_name = source["entrypoint"].split(".")[1]
