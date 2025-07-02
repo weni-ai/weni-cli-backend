@@ -1,7 +1,10 @@
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import UUID4, BaseModel, Json
+
+from app.core.config import settings
 
 
 class BaseRequestModel(BaseModel):
@@ -15,8 +18,8 @@ class BaseRequestModel(BaseModel):
 class ConfigureAgentsRequestModel(BaseRequestModel):
     """Configure agents request model."""
 
-    # type can only be "active" or "passive"
-    type: Literal["active", "passive"]
+    # type can be "active" or "passive", but is optional since we can auto-detect
+    type: Literal["active", "passive"] | None = None
 
 
 class RunToolRequestModel(BaseRequestModel):
