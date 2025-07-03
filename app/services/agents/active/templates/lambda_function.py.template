@@ -60,12 +60,19 @@ def initialize_rule(rule):
     rule_class = get_rule_class(locals())
     return rule_class()
 
+
+def initialize_global_rule_function(global_rule_source):
+    exec(global_rule_source)
+    return locals().get("global_rule")
+
 class ResponseStatus(Enum):
     RULE_MATCHED = 0
     RULE_NOT_MATCHED = 1
     PREPROCESSING_FAILED = 2
     CUSTOM_RULE_FAILED = 3
     OFFICIAL_RULE_FAILED = 4
+    GLOBAL_RULE_FAILED = 5
+    GLOBAL_RULE_NOT_MATCHED = 6
 
 class LambdaResponse:
     def __init__(self, status: ResponseStatus, template: str, template_variables: dict, contact_urn: str, error: dict = {}):
@@ -92,6 +99,7 @@ def lambda_handler(event, context):
     ignored_official_rules_keys = event.get("ignored_official_rules", [])
     project_rules = event.get("project_rules", [])
     project = event.get("project", {})
+    global_rule_source = event.get("global_rule", None)
 
     # Rule class to template mapping
     rule_class_to_template_map = {rule_class_to_template}
@@ -106,6 +114,27 @@ def lambda_handler(event, context):
         sentry_sdk.capture_exception(error)
         return LambdaResponse(
             status=ResponseStatus.PREPROCESSING_FAILED,
+            template=None,
+            template_variables={},
+            contact_urn=None,
+            error=str(error)
+        ).to_dict()
+
+    # Check if global rule is matched
+    try:
+        if global_rule_source:
+            global_rule = initialize_global_rule_function(global_rule_source)
+            if not global_rule(data=preprocess_result):
+                return LambdaResponse(
+                    status=ResponseStatus.GLOBAL_RULE_NOT_MATCHED,
+                    template=None,
+                    template_variables={},
+                    contact_urn=None,
+                ).to_dict()
+    except Exception as error:
+        sentry_sdk.capture_exception(error)
+        return LambdaResponse(
+            status=ResponseStatus.GLOBAL_RULE_FAILED,
             template=None,
             template_variables={},
             contact_urn=None,
