@@ -23,13 +23,26 @@ class ConfigureAgentsRequestModel(BaseRequestModel):
 
 
 class RunToolRequestModel(BaseRequestModel):
-    """Run tool request model."""
+    """Run tool request model for passive agents."""
 
     test_definition: Json
     tool_key: str
     agent_key: str
     tool_credentials: Json
     tool_globals: Json
+
+
+class RunActiveAgentRequestModel(BaseRequestModel):
+    """Run agent request model for active agents."""
+
+    test_definition: Json
+    agent_key: str
+    rule_key: str
+    rule_credentials: Json = {}  # Used as default credentials
+    rule_globals: Json = {}
+    type: str = "active"  # CLI sends this field
+    payload_path: str | None = None  # Path to webhook payload JSON file
+    webhook_data: Json | None = None  # Webhook data sent directly by CLI
 
 
 class VerifyPermissionRequestModel(BaseModel):

@@ -132,6 +132,116 @@ class TestAWSLambdaClient:
         assert result.arn == TEST_FUNCTION_ARN
         assert result.name == TEST_FUNCTION_NAME
 
+    def test_create_function_with_environment_variables(
+        self, lambda_client: AWSLambdaClient, mock_lambda_client: Any, test_code: BytesIO
+    ) -> None:
+        """Test create_function method with environment variables"""
+        # Setup
+        mock_lambda_client.create_function.return_value = {"FunctionArn": TEST_FUNCTION_ARN}
+        environment = {"ENV_VAR1": "value1", "ENV_VAR2": "value2"}
+
+        # Execute
+        result = lambda_client.create_function(
+            function_name=TEST_FUNCTION_NAME,
+            handler=TEST_HANDLER,
+            code=test_code,
+            description="Test function description",
+            environment=environment,
+        )
+
+        # Assert
+        mock_lambda_client.create_function.assert_called_once_with(
+            FunctionName=TEST_FUNCTION_NAME,
+            Runtime="python3.12",
+            Timeout=180,
+            Role=settings.AGENT_RESOURCE_ROLE_ARN,
+            Code={"ZipFile": test_code.getvalue()},
+            Handler=TEST_HANDLER,
+            Description="Test function description",
+            LoggingConfig={"LogGroup": settings.AGENT_LOG_GROUP},
+            Environment={"Variables": environment},
+        )
+
+        assert isinstance(result, LambdaFunction)
+        assert result.arn == TEST_FUNCTION_ARN
+        assert result.name == TEST_FUNCTION_NAME
+
+    def test_update_function_configuration(
+        self, lambda_client: AWSLambdaClient, mock_lambda_client: Any
+    ) -> None:
+        """Test update_function_configuration method"""
+        # Setup
+        environment = {"ENV_VAR1": "new_value1", "ENV_VAR2": "new_value2"}
+        mock_response = {
+            "FunctionName": TEST_FUNCTION_NAME,
+            "FunctionArn": TEST_FUNCTION_ARN,
+            "Environment": {"Variables": environment},
+        }
+        mock_lambda_client.update_function_configuration.return_value = mock_response
+
+        # Execute
+        result = lambda_client.update_function_configuration(
+            function_name=TEST_FUNCTION_NAME,
+            environment=environment,
+        )
+
+        # Assert
+        mock_lambda_client.update_function_configuration.assert_called_once_with(
+            FunctionName=TEST_FUNCTION_NAME,
+            Environment={"Variables": environment},
+        )
+        assert result == mock_response
+
+    def test_update_function_configuration_with_additional_params(
+        self, lambda_client: AWSLambdaClient, mock_lambda_client: Any
+    ) -> None:
+        """Test update_function_configuration method with additional parameters"""
+        # Setup
+        environment = {"ENV_VAR1": "new_value1"}
+        mock_response = {
+            "FunctionName": TEST_FUNCTION_NAME,
+            "FunctionArn": TEST_FUNCTION_ARN,
+            "Environment": {"Variables": environment},
+            "Timeout": 300,
+        }
+        mock_lambda_client.update_function_configuration.return_value = mock_response
+
+        # Execute
+        result = lambda_client.update_function_configuration(
+            function_name=TEST_FUNCTION_NAME,
+            environment=environment,
+            Timeout=300,
+        )
+
+        # Assert
+        mock_lambda_client.update_function_configuration.assert_called_once_with(
+            FunctionName=TEST_FUNCTION_NAME,
+            Environment={"Variables": environment},
+            Timeout=300,
+        )
+        assert result == mock_response
+
+    def test_get_function_configuration(
+        self, lambda_client: AWSLambdaClient, mock_lambda_client: Any
+    ) -> None:
+        """Test get_function_configuration method"""
+        # Setup
+        mock_response = {
+            "FunctionName": TEST_FUNCTION_NAME,
+            "FunctionArn": TEST_FUNCTION_ARN,
+            "Environment": {"Variables": {"ENV_VAR1": "value1"}},
+        }
+        mock_lambda_client.get_function_configuration.return_value = mock_response
+
+        # Execute
+        result = lambda_client.get_function_configuration(function_name=TEST_FUNCTION_NAME)
+
+        # Assert
+        mock_lambda_client.get_function_configuration.assert_called_once_with(
+            FunctionName=TEST_FUNCTION_NAME
+        )
+        assert result == mock_response
+
     def test_delete_function(self, lambda_client: AWSLambdaClient, mock_lambda_client: Any) -> None:
         """Test delete_function method"""
         # Execute
@@ -282,3 +392,95 @@ class TestAWSLambdaClient:
             assert mock_lambda_client.get_function.call_count == MAX_ATTEMPTS
             assert mock_sleep.call_count == MAX_ATTEMPTS
             assert result is False
+
+    def test_build_default_environment_variables(self) -> None:
+        """Test build_default_environment_variables static method"""
+        # Execute
+        result = AWSLambdaClient.build_default_environment_variables(
+            project_uuid="test-project-uuid",
+            agent_key="test-agent",
+            tool_key="test-tool",
+            custom_vars={"CUSTOM_VAR": "custom_value"},
+        )
+
+        # Assert
+        expected = {
+            "PROJECT_UUID": "test-project-uuid",
+            "WENI_ENVIRONMENT": settings.ENVIRONMENT,
+            "LOG_LEVEL": "INFO",
+            "AGENT_KEY": "test-agent",
+            "TOOL_KEY": "test-tool",
+            "CUSTOM_VAR": "custom_value",
+        }
+        assert result == expected
+
+    def test_build_default_environment_variables_minimal(self) -> None:
+        """Test build_default_environment_variables with minimal parameters"""
+        # Execute
+        result = AWSLambdaClient.build_default_environment_variables(
+            project_uuid="test-project-uuid"
+        )
+
+        # Assert
+        expected = {
+            "PROJECT_UUID": "test-project-uuid",
+            "WENI_ENVIRONMENT": settings.ENVIRONMENT,
+            "LOG_LEVEL": "INFO",
+        }
+        assert result == expected
+
+    def test_update_environment_variables_merge(
+        self, lambda_client: AWSLambdaClient, mock_lambda_client: Any
+    ) -> None:
+        """Test update_environment_variables with merge option"""
+        # Setup
+        existing_env = {"EXISTING_VAR": "existing_value", "OVERRIDE_VAR": "old_value"}
+        new_env = {"NEW_VAR": "new_value", "OVERRIDE_VAR": "new_value"}
+        
+        mock_lambda_client.get_function_configuration.return_value = {
+            "Environment": {"Variables": existing_env}
+        }
+        mock_lambda_client.update_function_configuration.return_value = {"Updated": True}
+
+        # Execute
+        result = lambda_client.update_environment_variables(
+            function_name=TEST_FUNCTION_NAME,
+            new_environment_vars=new_env,
+            merge_with_existing=True,
+        )
+
+        # Assert
+        expected_merged = {
+            "EXISTING_VAR": "existing_value",
+            "NEW_VAR": "new_value",
+            "OVERRIDE_VAR": "new_value",  # Should be overridden
+        }
+        mock_lambda_client.update_function_configuration.assert_called_once_with(
+            FunctionName=TEST_FUNCTION_NAME,
+            Environment={"Variables": expected_merged},
+        )
+        assert result == {"Updated": True}
+
+    def test_update_environment_variables_replace(
+        self, lambda_client: AWSLambdaClient, mock_lambda_client: Any
+    ) -> None:
+        """Test update_environment_variables with replace option"""
+        # Setup
+        new_env = {"NEW_VAR": "new_value"}
+        mock_lambda_client.update_function_configuration.return_value = {"Updated": True}
+
+        # Execute
+        result = lambda_client.update_environment_variables(
+            function_name=TEST_FUNCTION_NAME,
+            new_environment_vars=new_env,
+            merge_with_existing=False,
+        )
+
+        # Assert
+        mock_lambda_client.update_function_configuration.assert_called_once_with(
+            FunctionName=TEST_FUNCTION_NAME,
+            Environment={"Variables": new_env},
+        )
+        assert result == {"Updated": True}
+        # Should not call get_function_configuration when not merging
+        mock_lambda_client.get_function_configuration.assert_not_called()
