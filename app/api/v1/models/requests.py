@@ -1,7 +1,10 @@
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import UUID4, BaseModel, Json
+
+from app.core.config import settings
 
 
 class BaseRequestModel(BaseModel):
@@ -15,18 +18,31 @@ class BaseRequestModel(BaseModel):
 class ConfigureAgentsRequestModel(BaseRequestModel):
     """Configure agents request model."""
 
-    # type can only be "active" or "passive"
-    type: Literal["active", "passive"]
+    # type can be "active" or "passive", but is optional since we can auto-detect
+    type: Literal["active", "passive"] | None = None
 
 
 class RunToolRequestModel(BaseRequestModel):
-    """Run tool request model."""
+    """Run tool request model for passive agents."""
 
     test_definition: Json
     tool_key: str
     agent_key: str
     tool_credentials: Json
     tool_globals: Json
+
+
+class RunActiveAgentRequestModel(BaseRequestModel):
+    """Run agent request model for active agents."""
+
+    test_definition: Json
+    agent_key: str
+    rule_key: str
+    rule_credentials: Json = {}  # Used as default credentials
+    rule_globals: Json = {}
+    type: str = "active"  # CLI sends this field
+    payload_path: str | None = None  # Path to webhook payload JSON file
+    webhook_data: Json | None = None  # Webhook data sent directly by CLI
 
 
 class VerifyPermissionRequestModel(BaseModel):

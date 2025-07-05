@@ -16,6 +16,7 @@ from starlette.responses import StreamingResponse
 from app.core.config import settings
 from app.main import app
 from app.tests.utils import AsyncMock
+from app.api.v1.routers.agents import detect_agent_type
 
 # Common test constants
 TEST_CONTENT = b"test content"
@@ -79,6 +80,35 @@ def agent_definition() -> dict[str, Any]:
                         "source": {"entrypoint": "main.TestTool"},
                     }
                 ],
+            }
+        }
+    }
+
+
+@pytest.fixture
+def active_agent_definition() -> dict[str, Any]:
+    """Create a standard active agent definition for testing."""
+    return {
+        "agents": {
+            TEST_AGENT_KEY: {
+                "name": "Test Active Agent",
+                "slug": TEST_AGENT,
+                "description": "A test active agent",
+                "rules": {
+                    "test_rule": {
+                        "template": "test_template",
+                        "source": {
+                            "entrypoint": "main.TestRule",
+                            "path": "test_rule.zip"
+                        }
+                    }
+                },
+                "pre_processing": {
+                    "source": {
+                        "entrypoint": "preprocessor.PreProcessor",
+                        "path": "preprocessor.zip"
+                    }
+                }
             }
         }
     }
@@ -149,6 +179,35 @@ def custom_post_request_factory(
     return make_custom_post_request
 
 
+@pytest.fixture
+def active_post_request_factory(
+    client: TestClient,
+    api_path: str,
+    project_uuid: UUID,
+    auth_header: dict[str, str],
+    active_agent_definition: dict[str, Any],
+) -> Callable[[], Any]:
+    """Create a factory function for making standardized POST requests for active agents."""
+
+    def make_post_request() -> Any:
+        return client.post(
+            api_path,
+            data={
+                "type": "active",
+                "project_uuid": str(project_uuid),
+                "definition": json.dumps(active_agent_definition),
+                "toolkit_version": TEST_TOOLKIT_VERSION,
+            },
+            files={
+                f"{TEST_AGENT_KEY}:test_rule": ("test_rule.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
+                f"{TEST_AGENT_KEY}:preprocessor_folder": ("preprocessor.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
+            },
+            headers=auth_header,
+        )
+
+    return make_post_request
+
+
 def parse_streaming_response(response: Any) -> list[dict[str, Any]]:
     """Parse streaming response into JSON events."""
     if not hasattr(response, "content") or not response.content:
@@ -164,6 +223,45 @@ def parse_streaming_response(response: Any) -> list[dict[str, Any]]:
                 print(f"Failed to decode JSON line: {line}")  # Debugging
                 pass  # Ignore lines that are not valid JSON
     return result
+
+
+class TestAgentTypeDetection:
+    """Tests for automatic agent type detection."""
+
+    def test_detect_active_agent_type(self, active_agent_definition: dict[str, Any]) -> None:
+        """Test detection of active agent type based on 'rules' field."""
+        detected_type = detect_agent_type(active_agent_definition)
+        assert detected_type == "active"
+
+    def test_detect_passive_agent_type(self, agent_definition: dict[str, Any]) -> None:
+        """Test detection of passive agent type based on 'tools' field."""
+        detected_type = detect_agent_type(agent_definition)
+        assert detected_type == "passive"
+
+    def test_detect_agent_type_empty_agents(self) -> None:
+        """Test error handling when no agents are present."""
+        empty_definition = {"agents": {}}
+        with pytest.raises(ValueError, match="No agents found in definition"):
+            detect_agent_type(empty_definition)
+
+    def test_detect_agent_type_no_agents_key(self) -> None:
+        """Test error handling when agents key is missing."""
+        invalid_definition = {"invalid": "structure"}
+        with pytest.raises(ValueError, match="No agents found in definition"):
+            detect_agent_type(invalid_definition)
+
+    def test_detect_agent_type_no_tools_or_rules(self) -> None:
+        """Test error handling when agent has neither tools nor rules."""
+        invalid_definition = {
+            "agents": {
+                "test_agent": {
+                    "name": "Test Agent",
+                    "description": "An agent without tools or rules"
+                }
+            }
+        }
+        with pytest.raises(ValueError, match="Unable to determine agent type"):
+            detect_agent_type(invalid_definition)
 
 
 class TestAgentConfigEndpoint:
@@ -188,6 +286,22 @@ class TestAgentConfigEndpoint:
         return mock_configurator_instance
 
     @pytest.fixture
+    def mock_active_configurator(self, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> Any:
+        """Mock the ActiveAgentConfigurator using mocker."""
+        # Mock the class itself using mocker
+        mock_configurator_class = mocker.MagicMock()
+
+        # Mock the instance and its configure_agents method
+        mock_configurator_instance = mocker.MagicMock()
+        mock_configurator_class.return_value = mock_configurator_instance
+
+        # Patch the class in the router module using monkeypatch
+        monkeypatch.setattr("app.api.v1.routers.agents.ActiveAgentConfigurator", mock_configurator_class)
+
+        # Return the mock instance for further configuration in tests
+        return mock_configurator_instance
+
+    @pytest.fixture
     def mock_helper_functions(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock helper functions called directly by the endpoint."""
         mock_upload_file = UploadFile(
@@ -206,14 +320,37 @@ class TestAgentConfigEndpoint:
         fixed_uuid = UUID(TEST_REQUEST_ID)
         monkeypatch.setattr("app.api.v1.routers.agents.uuid4", lambda: fixed_uuid)
 
-    def test_success(  # noqa: PLR0913
+    @pytest.fixture
+    def mock_helper_functions_active(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Mock helper functions for active agent tests."""
+        rule_key = f"{TEST_AGENT_KEY}:test_rule"
+        preprocessor_key = f"{TEST_AGENT_KEY}:preprocessor_folder"
+        
+        mock_upload_files = {
+            rule_key: UploadFile(filename="test_rule.zip", file=io.BytesIO(TEST_CONTENT)),
+            preprocessor_key: UploadFile(filename="preprocessor.zip", file=io.BytesIO(TEST_CONTENT))
+        }
+        
+        monkeypatch.setattr(
+            "app.api.v1.routers.agents.extract_agent_resources_files",
+            AsyncMock(return_value=mock_upload_files),
+        )
+        monkeypatch.setattr(
+            "app.api.v1.routers.agents.read_agent_resources_content",
+            AsyncMock(return_value=[(rule_key, TEST_CONTENT), (preprocessor_key, TEST_CONTENT)]),
+        )
+        # Mock uuid4 used for request_id
+        fixed_uuid = UUID(TEST_REQUEST_ID)
+        monkeypatch.setattr("app.api.v1.routers.agents.uuid4", lambda: fixed_uuid)
+
+    def test_success_passive_agent(  # noqa: PLR0913
         self,
         post_request_factory: Callable[[], Any],
         mock_helper_functions: None,
         mock_passive_configurator: Any,
         mock_auth_middleware: None,
     ) -> None:
-        """Test successful agent config endpoint."""
+        """Test successful passive agent config endpoint."""
         # Setup mock response for configure_agents
         success_stream = create_mock_streaming_response(
             [
@@ -247,6 +384,184 @@ class TestAgentConfigEndpoint:
         assert response_data[0]["code"] == "PROCESSING_STARTED"
         assert response_data[-1]["code"] == "PROCESSING_COMPLETED"
         assert response_data[-1]["success"] is True
+
+    def test_success_active_agent(  # noqa: PLR0913
+        self,
+        active_post_request_factory: Callable[[], Any],
+        mock_helper_functions_active: None,
+        mock_active_configurator: Any,
+        mock_auth_middleware: None,
+    ) -> None:
+        """Test successful active agent config endpoint."""
+        # Setup mock response for configure_agents
+        success_stream = create_mock_streaming_response(
+            [
+                {"message": "Processing agents...", "success": True, "code": "PROCESSING_STARTED", "progress": 0.01},
+                {"message": "Rule processed successfully", "success": True, "code": "RULE_PROCESSED"},
+                {"message": "Updating agents...", "success": True, "code": "GALLERY_UPLOAD_STARTED", "progress": 0.99},
+                {
+                    "message": "Agents processed successfully",
+                    "success": True,
+                    "code": "PROCESSING_COMPLETED",
+                    "progress": 1.0,
+                },
+            ]
+        )
+        mock_active_configurator.configure_agents.return_value = success_stream
+
+        # Execute
+        response = active_post_request_factory()
+
+        # Assert
+        assert response.status_code == status.HTTP_200_OK, "Should return 200 OK"
+        mock_active_configurator.configure_agents.assert_called_once()  # Verify configurator was called
+
+        # Parse the streaming response
+        response_data = parse_streaming_response(response)
+
+        # Check that the streaming response includes expected messages
+        assert len(response_data) >= self.MIN_EXPECTED_SUCCESS_STREAM_MESSAGES, (
+            "Should contain at least start and end messages"
+        )
+        assert response_data[0]["code"] == "PROCESSING_STARTED"
+        assert response_data[-1]["code"] == "PROCESSING_COMPLETED"
+        assert response_data[-1]["success"] is True
+
+    def test_automatic_type_detection_overrides_provided_type(
+        self,
+        client: TestClient,
+        api_path: str,
+        project_uuid: UUID,
+        auth_header: dict[str, str],
+        active_agent_definition: dict[str, Any],
+        mock_helper_functions_active: None,
+        mock_active_configurator: Any,
+        mock_auth_middleware: None,
+    ) -> None:
+        """Test that automatic type detection overrides the provided type when they differ."""
+        # Setup mock response
+        success_stream = create_mock_streaming_response(
+            [
+                {"message": "Processing agents...", "success": True, "code": "PROCESSING_STARTED", "progress": 0.01},
+                {
+                    "message": "Agents processed successfully",
+                    "success": True,
+                    "code": "PROCESSING_COMPLETED",
+                    "progress": 1.0,
+                },
+            ]
+        )
+        mock_active_configurator.configure_agents.return_value = success_stream
+
+        # Send a request with type="passive" but active agent definition (with rules)
+        response = client.post(
+            api_path,
+            data={
+                "type": "passive",  # Wrong type provided
+                "project_uuid": str(project_uuid),
+                "definition": json.dumps(active_agent_definition),
+                "toolkit_version": TEST_TOOLKIT_VERSION,
+            },
+            files={
+                f"{TEST_AGENT_KEY}:test_rule": ("test_rule.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
+                f"{TEST_AGENT_KEY}:preprocessor_folder": ("preprocessor.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
+            },
+            headers=auth_header,
+        )
+
+        # Assert that the active configurator was used (not passive)
+        assert response.status_code == status.HTTP_200_OK
+        mock_active_configurator.configure_agents.assert_called_once()
+
+    def test_automatic_type_detection_without_provided_type(
+        self,
+        client: TestClient,
+        api_path: str,
+        project_uuid: UUID,
+        auth_header: dict[str, str],
+        active_agent_definition: dict[str, Any],
+        mock_helper_functions_active: None,
+        mock_active_configurator: Any,
+        mock_auth_middleware: None,
+    ) -> None:
+        """Test that automatic type detection works when no type is provided."""
+        # Setup mock response
+        success_stream = create_mock_streaming_response(
+            [
+                {"message": "Processing agents...", "success": True, "code": "PROCESSING_STARTED", "progress": 0.01},
+                {
+                    "message": "Agents processed successfully",
+                    "success": True,
+                    "code": "PROCESSING_COMPLETED",
+                    "progress": 1.0,
+                },
+            ]
+        )
+        mock_active_configurator.configure_agents.return_value = success_stream
+
+        # Send a request without type field
+        response = client.post(
+            api_path,
+            data={
+                # No "type" field provided
+                "project_uuid": str(project_uuid),
+                "definition": json.dumps(active_agent_definition),
+                "toolkit_version": TEST_TOOLKIT_VERSION,
+            },
+            files={
+                f"{TEST_AGENT_KEY}:test_rule": ("test_rule.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
+                f"{TEST_AGENT_KEY}:preprocessor_folder": ("preprocessor.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
+            },
+            headers=auth_header,
+        )
+
+        # Assert that the active configurator was used based on automatic detection
+        assert response.status_code == status.HTTP_200_OK
+        mock_active_configurator.configure_agents.assert_called_once()
+
+    def test_fallback_to_provided_type_on_detection_failure(
+        self,
+        client: TestClient,
+        api_path: str,
+        project_uuid: UUID,
+        auth_header: dict[str, str],
+        mock_helper_functions: None,
+        mock_passive_configurator: Any,
+        mock_auth_middleware: None,
+    ) -> None:
+        """Test that provided type is used when automatic detection fails."""
+        # Setup mock response
+        success_stream = create_mock_streaming_response(
+            [
+                {"message": "Processing agents...", "success": True, "code": "PROCESSING_STARTED", "progress": 0.01},
+                {
+                    "message": "Agents processed successfully",
+                    "success": True,
+                    "code": "PROCESSING_COMPLETED",
+                    "progress": 1.0,
+                },
+            ]
+        )
+        mock_passive_configurator.configure_agents.return_value = success_stream
+
+        # Send a request with invalid JSON definition but valid type
+        response = client.post(
+            api_path,
+            data={
+                "type": "passive",
+                "project_uuid": str(project_uuid),
+                "definition": "invalid json",  # This will cause detection to fail
+                "toolkit_version": TEST_TOOLKIT_VERSION,
+            },
+            files={
+                TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip"),
+            },
+            headers=auth_header,
+        )
+
+        # Assert that the passive configurator was used (fallback to provided type)
+        assert response.status_code == status.HTTP_200_OK
+        mock_passive_configurator.configure_agents.assert_called_once()
 
     @pytest.mark.parametrize(
         "test_id, data_fields, files_fields, headers, expected_status, error_msg, mock_stream_events",

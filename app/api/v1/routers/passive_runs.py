@@ -1,5 +1,5 @@
 """
-Tool runs endpoints for handling file uploads and processing.
+Passive agent tool runs endpoints for handling file uploads and processing.
 """
 
 import json
@@ -23,13 +23,24 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("")
-async def run_tool_test(  # noqa: PLR0915
+async def run_passive_tool_test(  # noqa: PLR0915
     request: Request,
     data: Annotated[RunToolRequestModel, Form()],
     authorization: Annotated[str, Header()],
 ) -> StreamingResponse:
+    """
+    Run tests for passive agent tools.
+    
+    Args:
+        request: FastAPI request object to access form data and files
+        data: Tool run request data
+        authorization: Authorization header
+        
+    Returns:
+        StreamingResponse: Streaming response with test results
+    """
     request_id = str(uuid4())
-    logger.info(f"Processing test run for project {data.project_uuid} - request_id: {request_id}")
+    logger.info(f"Processing passive tool test run for project {data.project_uuid} - request_id: {request_id}")
     logger.debug(f"Agent definition: {data.definition}")
 
     # Access the form data with files
@@ -52,7 +63,7 @@ async def run_tool_test(  # noqa: PLR0915
     async def response_stream() -> AsyncIterator[bytes]:
         try:
             initial_data: CLIResponse = {
-                "message": "Processing test run...",
+                "message": "Processing passive tool test run...",
                 "data": {
                     "project_uuid": str(data.project_uuid),
                 },
@@ -60,7 +71,7 @@ async def run_tool_test(  # noqa: PLR0915
                 "code": "PROCESSING_STARTED",
             }
             yield send_response(initial_data, request_id=request_id)
-            logger.info(f"Starting test run for tool {data.tool_key} by {data.agent_key}")
+            logger.info(f"Starting passive tool test run for tool {data.tool_key} by {data.agent_key}")
 
             # Get tool entrypoint
             agent_info = data.definition["agents"].get(data.agent_key)
@@ -110,12 +121,24 @@ async def run_tool_test(  # noqa: PLR0915
             }
             yield send_response(response, request_id=request_id)
 
-            # Create lambda function
+            # Build environment variables for the lambda function
+            environment_vars = lambda_client.build_default_environment_variables(
+                project_uuid=str(data.project_uuid),
+                agent_key=data.agent_key,
+                tool_key=data.tool_key,
+                custom_vars={
+                    "TOOL_CREDENTIALS": json.dumps(data.tool_credentials),
+                    "TOOL_GLOBALS": json.dumps(data.tool_globals),
+                    "FUNCTION_TYPE": "passive_tool",
+                }
+            )
+
             lambda_function: LambdaFunction = lambda_client.create_function(
                 function_name=function_name,
                 handler="lambda_function.lambda_handler",
                 code=tool_zip_bytes,
-                description=f"CLI run for tool {data.tool_key} by {data.agent_key}. Project: {data.project_uuid}",
+                description=f"CLI run for passive tool {data.tool_key} by {data.agent_key}. Project: {data.project_uuid}",
+                environment=environment_vars,
             )
 
             if not lambda_function.arn or not lambda_function.name:
@@ -124,7 +147,7 @@ async def run_tool_test(  # noqa: PLR0915
             if not await lambda_client.wait_for_function_active(lambda_function.arn):
                 raise ValueError("Tool did not became active")
 
-            logger.info(f"Tool {lambda_function.arn} active, invoking...")
+            logger.info(f"Passive tool {lambda_function.arn} active, invoking...")
 
             response = {
                 "message": "Running test cases",
@@ -138,7 +161,7 @@ async def run_tool_test(  # noqa: PLR0915
             yield send_response(response, request_id=request_id)
 
             for test_case, test_data in data.test_definition.get("tests", {}).items():
-                logger.info(f"Running test case {test_case} for tool {data.tool_key} by {data.agent_key}")
+                logger.info(f"Running test case {test_case} for passive tool {data.tool_key} by {data.agent_key}")
 
                 response = {
                     "message": f"Running test case {test_case}",
@@ -199,10 +222,10 @@ async def run_tool_test(  # noqa: PLR0915
 
         except Exception as e:
             logger.error(
-                f"Error processing test run for project {data.project_uuid}: {str(e)} - request_id: {request_id}"
+                f"Error processing passive tool test run for project {data.project_uuid}: {str(e)} - request_id: {request_id}"
             )
             error_data: CLIResponse = {
-                "message": "Error processing test run",
+                "message": "Error processing passive tool test run",
                 "data": {
                     "project_uuid": str(data.project_uuid),
                     "error": str(e),
@@ -216,6 +239,6 @@ async def run_tool_test(  # noqa: PLR0915
             try:
                 lambda_client.delete_function(function_name=function_name)
             except Exception as e:
-                logger.error(f"Error deleting tool {function_name}: {str(e)}")
+                logger.error(f"Error deleting passive tool {function_name}: {str(e)}")
 
-    return StreamingResponse(response_stream(), media_type="application/x-ndjson")
+    return StreamingResponse(response_stream(), media_type="application/x-ndjson") 
