@@ -49,7 +49,7 @@ def lambda_handler(event, context):
     )
 
     try:
-        result, format = {class_name}(context)
+        result, format, events = {class_name}(context)
     except Exception as error:
         sentry_sdk.capture_exception(error)
         raise error
@@ -64,8 +64,9 @@ def lambda_handler(event, context):
         'actionGroup': actionGroup,
         'function': function,
         'functionResponse': {
-            'responseBody': responseBody
+            'responseBody': responseBody,
         },
+        'sessionAttributes': : {'events': json.dumps(events)},
         'promptSessionAttributes': {
             'alwaysFormat': f"<example>{format}</example>"
         }
