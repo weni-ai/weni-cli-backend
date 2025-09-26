@@ -64,7 +64,7 @@ def lambda_handler(event, context):
         'actionGroup': actionGroup,
         'function': function,
         'functionResponse': {
-            'responseBody': responseBody,
+            'responseBody': responseBody
         },
         'sessionAttributes': {'events': json.dumps(events)},
         'promptSessionAttributes': {
