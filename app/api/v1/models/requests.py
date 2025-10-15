@@ -44,3 +44,10 @@ class GetLogsRequestModel(BaseModel):
     end_time: datetime | None = None
     pattern: str | None = None
     next_token: str | None = None
+
+
+class CreateChannelRequestModel(BaseModel):
+    """Create channel request model."""
+
+    project_uuid: UUID4
+    channel_definition: Json

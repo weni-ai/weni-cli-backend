@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # Gallery settings
     GALLERY_BASE_URL: str = "https://gallery.weni.ai"
 
+    # Flows settings
+    FLOWS_BASE_URL: str = "https://flows.weni.ai"
+
     # CLI settings
     CLI_MINIMUM_VERSION: str = "0.1.0"
 
