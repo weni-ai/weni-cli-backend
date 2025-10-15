@@ -17,7 +17,7 @@ class FlowsClient:
         self.project_uuid = project_uuid
 
     def create_channel(self, channel_definition: dict) -> Response:
-        url = f"{self.base_url}/api/v2/internals/channels/create"
+        url = f"{self.base_url}/api/v2/internals/channels/create/"
 
         data = {
             "project_uuid": self.project_uuid,

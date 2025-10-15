@@ -21,16 +21,13 @@ class TestFlowsClient:
         "channel_type": "WAC",
         "name": "Test Channel",
         "address": "+5511999999999",
-        "config": {
-            "wa_pin": "123456",
-            "wa_verified_name": "Test Business"
-        }
+        "config": {"wa_pin": "123456", "wa_verified_name": "Test Business"},
     }
     TEST_RESPONSE_DATA = {
         "uuid": "channel-uuid-123",
         "name": "Test Channel",
         "address": "+5511999999999",
-        "channel_type": "WAC"
+        "channel_type": "WAC",
     }
 
     def test_init(self) -> None:
@@ -60,7 +57,7 @@ class TestFlowsClient:
         """Test create_channel method with different status codes."""
         # Arrange
         client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
-        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channels/create"
+        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channels/create/"
 
         # Mock the API response
         requests_mock.post(expected_url, status_code=status_code, json=response_data)
@@ -71,22 +68,22 @@ class TestFlowsClient:
         # Assert
         assert response.status_code == status_code
         assert response.json() == response_data
-        
+
         # Verify the request had the correct headers
         assert requests_mock.last_request is not None
         assert requests_mock.last_request.headers["Authorization"] == self.TEST_AUTH_TOKEN
-        
+
         # Check URL construction
         parsed_url = urlparse(requests_mock.last_request.url)
         assert f"{parsed_url.scheme}://{parsed_url.netloc}" == settings.FLOWS_BASE_URL.rstrip("/")
-        assert parsed_url.path == "/api/v2/internals/channels/create"
+        assert parsed_url.path == "/api/v2/internals/channels/create/"
 
     def test_create_channel_request_body(self, requests_mock: requests_mock.Mocker) -> None:
         """Test that create_channel sends the correct request body."""
         # Arrange
         client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
-        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channels/create"
-        
+        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channels/create/"
+
         # Mock the API response
         requests_mock.post(expected_url, status_code=HTTPStatus.CREATED, json=self.TEST_RESPONSE_DATA)
 
@@ -95,7 +92,7 @@ class TestFlowsClient:
 
         # Assert
         assert response.status_code == HTTPStatus.CREATED
-        
+
         # Verify request body
         assert requests_mock.last_request is not None
         request_json = requests_mock.last_request.json()
@@ -136,7 +133,7 @@ class TestFlowsClient:
         """Test FlowsClient with empty project UUID."""
         # Arrange
         client = FlowsClient(self.TEST_AUTH_TOKEN, "")
-        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channels/create"
+        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channels/create/"
 
         # Mock the API response
         requests_mock.post(expected_url, status_code=HTTPStatus.BAD_REQUEST, json={"detail": "Invalid project"})
@@ -152,15 +149,15 @@ class TestFlowsClient:
         """Test create_channel with empty channel definition."""
         # Arrange
         client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
-        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channels/create"
+        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channels/create/"
 
         # Mock the API response
-        requests_mock.post(expected_url, status_code=HTTPStatus.BAD_REQUEST, json={"detail": "Channel data is required"})
+        requests_mock.post(
+            expected_url, status_code=HTTPStatus.BAD_REQUEST, json={"detail": "Channel data is required"}
+        )
 
         # Act
         response = client.create_channel({})
 
         # Assert
         assert response.status_code == HTTPStatus.BAD_REQUEST
-
-
