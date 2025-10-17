@@ -14,6 +14,9 @@ from app.clients.flows_client import FlowsClient
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# HTTP status code constants
+HTTP_BAD_REQUEST = 400
+
 
 @router.post("")
 async def create_channel(
@@ -37,35 +40,21 @@ async def create_channel(
 
     try:
         # Create Flows client instance
-        flows_client = FlowsClient(
-            user_auth_token=authorization,
-            project_uuid=str(data.project_uuid)
-        )
+        flows_client = FlowsClient(user_auth_token=authorization, project_uuid=str(data.project_uuid))
 
         # Call Flows API to create channel
         response = flows_client.create_channel(data.channel_definition)
 
         # Check response status
-        if response.status_code >= 400:
+        if response.status_code >= HTTP_BAD_REQUEST:
             logger.error(f"Error creating channel: {response.status_code} - {response.text}")
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Failed to create channel: {response.text}"
-            )
+            raise HTTPException(status_code=response.status_code, detail=f"Failed to create channel: {response.text}")
 
         logger.info(f"Channel created successfully for project {data.project_uuid}")
-        return JSONResponse(
-            status_code=response.status_code,
-            content=response.json()
-        )
+        return JSONResponse(status_code=response.status_code, content=response.json())
 
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error creating channel: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
-
-
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e

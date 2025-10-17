@@ -1,5 +1,7 @@
 """Tests for FlowsClient class."""
 
+import base64
+import json
 from http import HTTPStatus
 from urllib.parse import urlparse
 
@@ -12,11 +14,19 @@ from app.clients.flows_client import FlowsClient
 from app.core.config import settings
 
 
+def create_test_jwt_token(email: str) -> str:
+    """Create a test JWT token with the given email."""
+    payload = {"email": email}
+    encoded_payload = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+    return f"Bearer header.{encoded_payload}.signature"
+
+
 class TestFlowsClient:
     """Tests for the FlowsClient class."""
 
-    TEST_AUTH_TOKEN = "test-token"
     TEST_PROJECT_UUID = "123e4567-e89b-12d3-a456-426614174000"
+    TEST_USER_EMAIL = "test@example.com"
+    TEST_AUTH_TOKEN = create_test_jwt_token(TEST_USER_EMAIL)
     TEST_CHANNEL_DEFINITION = {
         "channel_type": "WAC",
         "name": "Test Channel",
@@ -39,6 +49,7 @@ class TestFlowsClient:
         assert client.headers == {"Authorization": self.TEST_AUTH_TOKEN}
         assert client.base_url == settings.FLOWS_BASE_URL
         assert client.project_uuid == self.TEST_PROJECT_UUID
+        assert client.user_email == self.TEST_USER_EMAIL
 
     @pytest.mark.parametrize(
         "status_code,response_data",
@@ -57,7 +68,7 @@ class TestFlowsClient:
         """Test create_channel method with different status codes."""
         # Arrange
         client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
-        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channels/create/"
+        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channel/"
 
         # Mock the API response
         requests_mock.post(expected_url, status_code=status_code, json=response_data)
@@ -76,13 +87,13 @@ class TestFlowsClient:
         # Check URL construction
         parsed_url = urlparse(requests_mock.last_request.url)
         assert f"{parsed_url.scheme}://{parsed_url.netloc}" == settings.FLOWS_BASE_URL.rstrip("/")
-        assert parsed_url.path == "/api/v2/internals/channels/create/"
+        assert parsed_url.path == "/api/v2/internals/channel/"
 
     def test_create_channel_request_body(self, requests_mock: requests_mock.Mocker) -> None:
         """Test that create_channel sends the correct request body."""
         # Arrange
         client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
-        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channels/create/"
+        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channel/"
 
         # Mock the API response
         requests_mock.post(expected_url, status_code=HTTPStatus.CREATED, json=self.TEST_RESPONSE_DATA)
@@ -93,12 +104,13 @@ class TestFlowsClient:
         # Assert
         assert response.status_code == HTTPStatus.CREATED
 
-        # Verify request body
+        # Verify request body follows the correct format
         assert requests_mock.last_request is not None
         request_json = requests_mock.last_request.json()
-        assert "project_uuid" in request_json
-        assert request_json["project_uuid"] == self.TEST_PROJECT_UUID
-        assert "channel_data" in request_json
+        assert request_json["user"] == self.TEST_USER_EMAIL
+        assert request_json["org"] == self.TEST_PROJECT_UUID
+        assert request_json["channeltype_code"] == "WAC"
+        assert request_json["data"] == {"wa_pin": "123456", "wa_verified_name": "Test Business"}
 
     @pytest.mark.parametrize(
         "exception_class,exception_message",
@@ -128,12 +140,13 @@ class TestFlowsClient:
 
         # Assert
         assert client.headers == {"Authorization": ""}
+        assert client.user_email == ""  # Should be empty when token is invalid
 
     def test_empty_project_uuid(self, requests_mock: requests_mock.Mocker) -> None:
         """Test FlowsClient with empty project UUID."""
         # Arrange
         client = FlowsClient(self.TEST_AUTH_TOKEN, "")
-        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channels/create/"
+        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channel/"
 
         # Mock the API response
         requests_mock.post(expected_url, status_code=HTTPStatus.BAD_REQUEST, json={"detail": "Invalid project"})
@@ -149,7 +162,7 @@ class TestFlowsClient:
         """Test create_channel with empty channel definition."""
         # Arrange
         client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
-        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channels/create/"
+        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channel/"
 
         # Mock the API response
         requests_mock.post(
