@@ -39,15 +39,9 @@ def valid_request_data(project_uuid: str) -> dict[str, Any]:
         "channel_type": "WAC",
         "name": "Test Channel",
         "address": "+5511999999999",
-        "config": {
-            "wa_pin": "123456",
-            "wa_verified_name": "Test Business"
-        }
+        "config": {"wa_pin": "123456", "wa_verified_name": "Test Business"},
     }
-    return {
-        "project_uuid": project_uuid,
-        "channel_definition": json.dumps(channel_definition)
-    }
+    return {"project_uuid": project_uuid, "channel_definition": channel_definition}
 
 
 @pytest.fixture
@@ -58,24 +52,21 @@ def mock_flows_client(mocker: MockerFixture) -> Any:
     return mock
 
 
-def test_create_channel_success(
+def test_create_channel_success(  # noqa: PLR0913
     client: TestClient,
     api_path: str,
     project_uuid: str,
     valid_request_data: dict[str, Any],
     mock_flows_client: Any,
-    mock_auth_middleware: None
+    mock_auth_middleware: None,
 ) -> None:
     """Test successful channel creation."""
     # Setup
     mock_response = Response()
     mock_response.status_code = status.HTTP_201_CREATED
-    mock_response._content = json.dumps({
-        "uuid": "channel-uuid-123",
-        "name": "Test Channel",
-        "address": "+5511999999999",
-        "channel_type": "WAC"
-    }).encode()
+    mock_response._content = json.dumps(
+        {"uuid": "channel-uuid-123", "name": "Test Channel", "address": "+5511999999999", "channel_type": "WAC"}
+    ).encode()
     mock_flows_client.create_channel.return_value = mock_response
 
     # Execute
@@ -97,13 +88,13 @@ def test_create_channel_success(
     mock_flows_client.create_channel.assert_called_once()
 
 
-def test_create_channel_bad_request(
+def test_create_channel_bad_request(  # noqa: PLR0913
     client: TestClient,
     api_path: str,
     project_uuid: str,
     valid_request_data: dict[str, Any],
     mock_flows_client: Any,
-    mock_auth_middleware: None
+    mock_auth_middleware: None,
 ) -> None:
     """Test channel creation with bad request."""
     # Setup
@@ -128,13 +119,13 @@ def test_create_channel_bad_request(
     mock_flows_client.create_channel.assert_called_once()
 
 
-def test_create_channel_unauthorized(
+def test_create_channel_unauthorized(  # noqa: PLR0913
     client: TestClient,
     api_path: str,
     project_uuid: str,
     valid_request_data: dict[str, Any],
     mock_flows_client: Any,
-    mock_auth_middleware: None
+    mock_auth_middleware: None,
 ) -> None:
     """Test channel creation with unauthorized request."""
     # Setup
@@ -159,13 +150,13 @@ def test_create_channel_unauthorized(
     mock_flows_client.create_channel.assert_called_once()
 
 
-def test_create_channel_forbidden(
+def test_create_channel_forbidden(  # noqa: PLR0913
     client: TestClient,
     api_path: str,
     project_uuid: str,
     valid_request_data: dict[str, Any],
     mock_flows_client: Any,
-    mock_auth_middleware: None
+    mock_auth_middleware: None,
 ) -> None:
     """Test channel creation with forbidden access."""
     # Setup
@@ -190,13 +181,13 @@ def test_create_channel_forbidden(
     mock_flows_client.create_channel.assert_called_once()
 
 
-def test_create_channel_internal_server_error(
+def test_create_channel_internal_server_error(  # noqa: PLR0913
     client: TestClient,
     api_path: str,
     project_uuid: str,
     valid_request_data: dict[str, Any],
     mock_flows_client: Any,
-    mock_auth_middleware: None
+    mock_auth_middleware: None,
 ) -> None:
     """Test channel creation with internal server error."""
     # Setup
@@ -221,13 +212,13 @@ def test_create_channel_internal_server_error(
     mock_flows_client.create_channel.assert_called_once()
 
 
-def test_create_channel_exception(
+def test_create_channel_exception(  # noqa: PLR0913
     client: TestClient,
     api_path: str,
     project_uuid: str,
     valid_request_data: dict[str, Any],
     mock_flows_client: Any,
-    mock_auth_middleware: None
+    mock_auth_middleware: None,
 ) -> None:
     """Test exception during channel creation."""
     # Setup
@@ -250,19 +241,10 @@ def test_create_channel_exception(
     mock_flows_client.create_channel.assert_called_once()
 
 
-def test_create_channel_missing_project_uuid(
-    client: TestClient,
-    api_path: str,
-    mock_auth_middleware: None
-) -> None:
+def test_create_channel_missing_project_uuid(client: TestClient, api_path: str, mock_auth_middleware: None) -> None:
     """Test channel creation with missing project_uuid."""
     # Setup
-    invalid_data = {
-        "channel_definition": json.dumps({
-            "channel_type": "WAC",
-            "name": "Test Channel"
-        })
-    }
+    invalid_data = {"channel_definition": {"channel_type": "WAC", "name": "Test Channel"}}
 
     # Execute
     response = client.post(
@@ -280,16 +262,11 @@ def test_create_channel_missing_project_uuid(
 
 
 def test_create_channel_missing_channel_definition(
-    client: TestClient,
-    api_path: str,
-    project_uuid: str,
-    mock_auth_middleware: None
+    client: TestClient, api_path: str, project_uuid: str, mock_auth_middleware: None
 ) -> None:
     """Test channel creation with missing channel_definition."""
     # Setup
-    invalid_data = {
-        "project_uuid": project_uuid
-    }
+    invalid_data = {"project_uuid": project_uuid}
 
     # Execute
     response = client.post(
@@ -307,18 +284,13 @@ def test_create_channel_missing_channel_definition(
 
 
 def test_create_channel_invalid_project_uuid_format(
-    client: TestClient,
-    api_path: str,
-    mock_auth_middleware: None
+    client: TestClient, api_path: str, mock_auth_middleware: None
 ) -> None:
     """Test channel creation with invalid project_uuid format."""
     # Setup
     invalid_data = {
         "project_uuid": "not-a-valid-uuid",
-        "channel_definition": json.dumps({
-            "channel_type": "WAC",
-            "name": "Test Channel"
-        })
+        "channel_definition": {"channel_type": "WAC", "name": "Test Channel"},
     }
 
     # Execute
@@ -334,4 +306,3 @@ def test_create_channel_invalid_project_uuid_format(
 
     # Assert
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-
