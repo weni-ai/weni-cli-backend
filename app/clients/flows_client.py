@@ -109,16 +109,22 @@ class FlowsClient:
 
         # Extract fields from channel_definition
         channel_type = channel_definition.get("channel_type", "")
+        name = channel_definition.get("name", "")
+        schemes = channel_definition.get("schemes", [])
+        address = channel_definition.get("address", "")
         config = channel_definition.get("config", {})
 
         # Build the payload according to Flows API format
         # NOTE: Flows receives Keycloak token in headers and extracts user from there
         # The 'user' field is included for compatibility but Flows may extract from token
-        data = {
+        payload = {
             "user": self.user_email,  # Extracted from JWT token
             "org": self.project_uuid,
             "channeltype_code": channel_type,
-            "data": config,
+            "name": name,
+            "schemes": schemes,
+            "address": address,
+            "data": config,  # Flows expects "data" for channel config
         }
 
         # Debug logging - show complete request
@@ -128,13 +134,16 @@ class FlowsClient:
         logger.debug(f"URL: {url}")
         logger.debug(f"Headers: {self.headers}")
         logger.debug("Payload:")
-        logger.debug(f"  user: {data['user']}")
-        logger.debug(f"  org: {data['org']}")
-        logger.debug(f"  channeltype_code: {data['channeltype_code']}")
-        logger.debug(f"  data: {data['data']}")
+        logger.debug(f"  user: {payload['user']}")
+        logger.debug(f"  org: {payload['org']}")
+        logger.debug(f"  channeltype_code: {payload['channeltype_code']}")
+        logger.debug(f"  name: {payload['name']}")
+        logger.debug(f"  schemes: {payload['schemes']}")
+        logger.debug(f"  address: {payload['address']}")
+        logger.debug(f"  data: {payload['data']}")
         logger.debug("=" * 80)
 
-        response = requests.post(url, headers=self.headers, json=data)
+        response = requests.post(url, headers=self.headers, json=payload)
 
         # Debug logging - show response
         logger.debug("FLOWS API RESPONSE")
