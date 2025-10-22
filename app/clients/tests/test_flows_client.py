@@ -31,6 +31,7 @@ class TestFlowsClient:
         "channel_type": "WAC",
         "name": "Test Channel",
         "address": "+5511999999999",
+        "schemes": ["tel"],
         "config": {"wa_pin": "123456", "wa_verified_name": "Test Business"},
     }
     TEST_RESPONSE_DATA = {
@@ -90,7 +91,7 @@ class TestFlowsClient:
         assert parsed_url.path == "/api/v2/internals/channel/"
 
     def test_create_channel_request_body(self, requests_mock: requests_mock.Mocker) -> None:
-        """Test that create_channel sends the correct request body."""
+        """Test that create_channel sends the correct request body as JSON."""
         # Arrange
         client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
         expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channel/"
@@ -107,9 +108,17 @@ class TestFlowsClient:
         # Verify request body follows the correct format
         assert requests_mock.last_request is not None
         request_json = requests_mock.last_request.json()
-        assert request_json["user"] == self.TEST_USER_EMAIL
+        
+        # ClaimView expects these fields at top level
         assert request_json["org"] == self.TEST_PROJECT_UUID
+        assert request_json["user"] == self.TEST_USER_EMAIL
         assert request_json["channeltype_code"] == "WAC"
+        assert request_json["name"] == "Test Channel"
+        assert request_json["address"] == "+5511999999999"
+        assert request_json["schemes"] == ["tel"]
+        
+        # Config data should be nested under 'data' key
+        assert "data" in request_json
         assert request_json["data"] == {"wa_pin": "123456", "wa_verified_name": "Test Business"}
 
     @pytest.mark.parametrize(
