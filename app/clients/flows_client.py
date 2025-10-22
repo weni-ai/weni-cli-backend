@@ -109,6 +109,9 @@ class FlowsClient:
 
         # Extract fields from channel_definition
         channel_type = channel_definition.get("channel_type", "")
+        name = channel_definition.get("name", "")
+        schemes = channel_definition.get("schemes", [])
+        address = channel_definition.get("address", "")
         config = channel_definition.get("config", {})
 
         # Build the payload according to Flows API format
@@ -118,6 +121,9 @@ class FlowsClient:
             "user": self.user_email,  # Extracted from JWT token
             "org": self.project_uuid,
             "channeltype_code": channel_type,
+            "name": name,
+            "schemes": schemes,
+            "address": address,
             "data": config,
         }
 
@@ -131,6 +137,9 @@ class FlowsClient:
         logger.debug(f"  user: {data['user']}")
         logger.debug(f"  org: {data['org']}")
         logger.debug(f"  channeltype_code: {data['channeltype_code']}")
+        logger.debug(f"  name: {data['name']}")
+        logger.debug(f"  schemes: {data['schemes']}")
+        logger.debug(f"  address: {data['address']}")
         logger.debug(f"  data: {data['data']}")
         logger.debug("=" * 80)
 

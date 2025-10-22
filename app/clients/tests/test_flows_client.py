@@ -31,6 +31,7 @@ class TestFlowsClient:
         "channel_type": "WAC",
         "name": "Test Channel",
         "address": "+5511999999999",
+        "schemes": ["tel"],
         "config": {"wa_pin": "123456", "wa_verified_name": "Test Business"},
     }
     TEST_RESPONSE_DATA = {
@@ -110,6 +111,9 @@ class TestFlowsClient:
         assert request_json["user"] == self.TEST_USER_EMAIL
         assert request_json["org"] == self.TEST_PROJECT_UUID
         assert request_json["channeltype_code"] == "WAC"
+        assert request_json["name"] == "Test Channel"
+        assert request_json["address"] == "+5511999999999"
+        assert request_json["schemes"] == ["tel"]
         assert request_json["data"] == {"wa_pin": "123456", "wa_verified_name": "Test Business"}
 
     @pytest.mark.parametrize(
