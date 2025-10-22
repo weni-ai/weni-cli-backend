@@ -109,16 +109,21 @@ class FlowsClient:
 
         # Extract fields from channel_definition
         channel_type = channel_definition.get("channel_type", "")
+        name = channel_definition.get("name", "")
+        schemes = channel_definition.get("schemes", [])
+        address = channel_definition.get("address", "")
         config = channel_definition.get("config", {})
 
         # Build the payload according to Flows API format
-        # NOTE: Flows receives Keycloak token in headers and extracts user from there
-        # The 'user' field is included for compatibility but Flows may extract from token
-        data = {
-            "user": self.user_email,  # Extracted from JWT token
-            "org": self.project_uuid,
-            "channeltype_code": channel_type,
-            "data": config,
+        # NOTE: ClaimView processes JSON body and looks for 'name', 'address', 'schemes' in body_obj
+        # It also looks for a nested 'data' key for the config
+        
+        # Build payload with top-level fields that ClaimView will find in body_obj
+        payload = {
+            "name": name,
+            "address": address,
+            "schemes": schemes,  # Keep as list - ClaimView handles it
+            "data": config,  # Config data nested under 'data' key
         }
 
         # Debug logging - show complete request
@@ -127,14 +132,15 @@ class FlowsClient:
         logger.debug("=" * 80)
         logger.debug(f"URL: {url}")
         logger.debug(f"Headers: {self.headers}")
-        logger.debug("Payload:")
-        logger.debug(f"  user: {data['user']}")
-        logger.debug(f"  org: {data['org']}")
-        logger.debug(f"  channeltype_code: {data['channeltype_code']}")
-        logger.debug(f"  data: {data['data']}")
+        logger.debug("JSON Payload:")
+        logger.debug(f"  name: {payload['name']}")
+        logger.debug(f"  address: {payload['address']}")
+        logger.debug(f"  schemes: {payload['schemes']}")
+        logger.debug(f"  data: {payload['data']}")
         logger.debug("=" * 80)
 
-        response = requests.post(url, headers=self.headers, json=data)
+        # Send as JSON - ClaimView will parse it and extract fields
+        response = requests.post(url, headers=self.headers, json=payload)
 
         # Debug logging - show response
         logger.debug("FLOWS API RESPONSE")
