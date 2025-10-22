@@ -109,16 +109,24 @@ class FlowsClient:
 
         # Extract fields from channel_definition
         channel_type = channel_definition.get("channel_type", "")
+        name = channel_definition.get("name", "")
+        schemes = channel_definition.get("schemes", [])
+        address = channel_definition.get("address", "")
         config = channel_definition.get("config", {})
 
         # Build the payload according to Flows API format
-        # NOTE: Flows receives Keycloak token in headers and extracts user from there
-        # The 'user' field is included for compatibility but Flows may extract from token
-        data = {
+        # NOTE: Flows expects form-data for processing name/address/schemes correctly
+        # The config data should be sent as a JSON string in the 'data' field
+        
+        # Build form data with flat fields
+        form_data = {
             "user": self.user_email,  # Extracted from JWT token
             "org": self.project_uuid,
             "channeltype_code": channel_type,
-            "data": config,
+            "name": name,
+            "address": address,
+            "schemes": ",".join(schemes) if schemes else "",  # Send as comma-separated string
+            "data": json.dumps(config),  # Send config as JSON string
         }
 
         # Debug logging - show complete request
@@ -127,14 +135,18 @@ class FlowsClient:
         logger.debug("=" * 80)
         logger.debug(f"URL: {url}")
         logger.debug(f"Headers: {self.headers}")
-        logger.debug("Payload:")
-        logger.debug(f"  user: {data['user']}")
-        logger.debug(f"  org: {data['org']}")
-        logger.debug(f"  channeltype_code: {data['channeltype_code']}")
-        logger.debug(f"  data: {data['data']}")
+        logger.debug("Form Data:")
+        logger.debug(f"  user: {form_data['user']}")
+        logger.debug(f"  org: {form_data['org']}")
+        logger.debug(f"  channeltype_code: {form_data['channeltype_code']}")
+        logger.debug(f"  name: {form_data['name']}")
+        logger.debug(f"  address: {form_data['address']}")
+        logger.debug(f"  schemes: {form_data['schemes']}")
+        logger.debug(f"  data: {form_data['data']}")
         logger.debug("=" * 80)
 
-        response = requests.post(url, headers=self.headers, json=data)
+        # Send as form-data instead of JSON
+        response = requests.post(url, headers=self.headers, data=form_data)
 
         # Debug logging - show response
         logger.debug("FLOWS API RESPONSE")

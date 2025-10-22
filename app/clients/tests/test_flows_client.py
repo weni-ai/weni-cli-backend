@@ -31,6 +31,7 @@ class TestFlowsClient:
         "channel_type": "WAC",
         "name": "Test Channel",
         "address": "+5511999999999",
+        "schemes": ["tel"],
         "config": {"wa_pin": "123456", "wa_verified_name": "Test Business"},
     }
     TEST_RESPONSE_DATA = {
@@ -90,7 +91,7 @@ class TestFlowsClient:
         assert parsed_url.path == "/api/v2/internals/channel/"
 
     def test_create_channel_request_body(self, requests_mock: requests_mock.Mocker) -> None:
-        """Test that create_channel sends the correct request body."""
+        """Test that create_channel sends the correct request body as form-data."""
         # Arrange
         client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
         expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channel/"
@@ -104,13 +105,25 @@ class TestFlowsClient:
         # Assert
         assert response.status_code == HTTPStatus.CREATED
 
-        # Verify request body follows the correct format
+        # Verify request body follows the correct format (form-data)
         assert requests_mock.last_request is not None
-        request_json = requests_mock.last_request.json()
-        assert request_json["user"] == self.TEST_USER_EMAIL
-        assert request_json["org"] == self.TEST_PROJECT_UUID
-        assert request_json["channeltype_code"] == "WAC"
-        assert request_json["data"] == {"wa_pin": "123456", "wa_verified_name": "Test Business"}
+        request_body = requests_mock.last_request.text
+        
+        # Parse form data
+        from urllib.parse import parse_qs
+        form_data = parse_qs(request_body)
+        
+        # Verify fields (parse_qs returns lists, so get first item)
+        assert form_data["user"][0] == self.TEST_USER_EMAIL
+        assert form_data["org"][0] == self.TEST_PROJECT_UUID
+        assert form_data["channeltype_code"][0] == "WAC"
+        assert form_data["name"][0] == "Test Channel"
+        assert form_data["address"][0] == "+5511999999999"
+        assert form_data["schemes"][0] == "tel"
+        
+        # Verify data field is JSON string
+        data_json = json.loads(form_data["data"][0])
+        assert data_json == {"wa_pin": "123456", "wa_verified_name": "Test Business"}
 
     @pytest.mark.parametrize(
         "exception_class,exception_message",
