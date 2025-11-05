@@ -35,6 +35,7 @@ def lambda_handler(event, context):
     globals = load_value(session_attributes.get('globals'))
     contact = load_value(session_attributes.get('contact'))
     project = load_value(session_attributes.get('project'))
+    constants = load_value(session_attributes.get('constants'))
 
     parameters_map = {}
     for param in parameters:
@@ -45,7 +46,8 @@ def lambda_handler(event, context):
         parameters=parameters_map,
         globals=globals,
         contact=contact,
-        project=project
+        project=project,
+        constants=constants
     )
 
     try:
