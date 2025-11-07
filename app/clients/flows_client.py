@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import time
+from typing import Any
 
 import requests
 from requests import Response
@@ -48,7 +49,7 @@ class FlowsClient:
                 payload += "=" * (4 - padding)
 
             decoded = base64.urlsafe_b64decode(payload)
-            payload_data = json.loads(decoded)
+            payload_data: dict[str, Any] = json.loads(decoded)
 
             # Log useful info
             logger.debug("=" * 80)
@@ -94,11 +95,11 @@ class FlowsClient:
                 payload += "=" * (4 - padding)
 
             decoded = base64.urlsafe_b64decode(payload)
-            payload_data = json.loads(decoded)
+            payload_data: dict[str, Any] = json.loads(decoded)
 
-            # Extract email from payload
+            # Extract email from payload ensuring str type
             email = payload_data.get("email", "")
-            return email
+            return email if isinstance(email, str) else str(email)
 
         except Exception as e:
             logger.warning(f"Failed to extract email from token: {e}")
