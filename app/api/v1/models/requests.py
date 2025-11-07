@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import UUID4, BaseModel, Json
 
@@ -44,3 +44,10 @@ class GetLogsRequestModel(BaseModel):
     end_time: datetime | None = None
     pattern: str | None = None
     next_token: str | None = None
+
+
+class CreateChannelRequestModel(BaseModel):
+    """Create channel request model."""
+
+    project_uuid: UUID4
+    channel_definition: dict[str, Any]
