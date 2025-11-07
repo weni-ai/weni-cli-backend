@@ -1,5 +1,5 @@
 """
-Channels endpoints for creating channels in Flows/RapidPro.
+Channels endpoints for creating channels in Flows.
 """
 
 import logging
@@ -25,7 +25,7 @@ async def create_channel(
     x_project_uuid: Annotated[str, Header()],
 ) -> JSONResponse:
     """
-    Create a new channel in Flows/RapidPro.
+    Create a new channel in Flows.
 
     Args:
         data: Channel creation data including project_uuid and channel_definition
