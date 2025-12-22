@@ -9,6 +9,7 @@ from app.core.config import settings
 SUBPROCESS_TIMEOUT_SECONDS = 120
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class Package:
     name: str
@@ -21,7 +22,6 @@ class Package:
 
 
 class Packager:
-
     def __init__(self, package_dir: Path):
         self.package_dir = package_dir
 
@@ -53,7 +53,6 @@ class Packager:
         except subprocess.TimeoutExpired as e:
             logger.error(f"Timeout installing toolkit: {e}")
             raise ValueError(f"Timeout installing toolkit (>{SUBPROCESS_TIMEOUT_SECONDS}s)") from e
-
 
     def install_dependencies(self, requirements_path: Path, tool_key: str) -> None:
         """
@@ -116,6 +115,9 @@ class Packager:
             template_content = template_content.replace("{{" + f"{key}" + "}}", "{" + f"{key}" + "}")
 
         template_content = template_content.replace("{{sentry_dsn}}", settings.FUNCTION_SENTRY_DSN)
+        template_content = template_content.replace(
+            "{{sentry_environment}}", settings.SENTRY_ENVIRONMENT or settings.ENVIRONMENT
+        )
 
         # Replace placeholders in the template
         args = {key: value for key, value in replacements.items()}

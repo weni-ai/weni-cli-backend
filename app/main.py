@@ -18,7 +18,9 @@ from app.core.config import settings
 
 sentry_sdk.init(
     dsn=settings.SENTRY_DSN,
+    environment=settings.SENTRY_ENVIRONMENT or settings.ENVIRONMENT,
     traces_sample_rate=1.0,
+    profiles_sample_rate=1.0,
     send_default_pii=True,
     integrations=[
         StarletteIntegration(

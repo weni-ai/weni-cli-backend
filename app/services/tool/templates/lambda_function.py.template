@@ -3,8 +3,10 @@ from sentry_sdk.integrations.aws_lambda import AwsLambdaIntegration
 
 sentry_sdk.init(
     dsn="{sentry_dsn}",
+    environment="{sentry_environment}",
     integrations=[AwsLambdaIntegration()],
     traces_sample_rate=1.0,
+    profiles_sample_rate=1.0,
 )
 
 def load_value(data):
