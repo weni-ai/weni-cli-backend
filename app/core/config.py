@@ -51,12 +51,13 @@ class Settings(BaseSettings):
     # Sentry settings
     SENTRY_DSN: str = ""
     FUNCTION_SENTRY_DSN: str = ""
+    SENTRY_ENVIRONMENT: str | None = None
 
     @field_validator("ENVIRONMENT")
     @classmethod
     def validate_environment(cls, value: str) -> str:  # pragma: no cover
         """Validate environment setting."""
-        allowed_environments = ["development", "testing", "production"]
+        allowed_environments = ["development", "testing", "staging", "production"]
         if value.lower() not in allowed_environments:
             raise ValueError(f"Environment must be one of {allowed_environments}")
         return value.lower()
