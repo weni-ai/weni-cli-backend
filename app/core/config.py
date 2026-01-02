@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     SENTRY_DSN: str = ""
     FUNCTION_SENTRY_DSN: str = ""
     SENTRY_ENVIRONMENT: str | None = None
+    SENTRY_TRACES_SAMPLE_RATE: float = 1.0
+    SENTRY_PROFILES_SAMPLE_RATE: float = 1.0
+    SENTRY_DEBUG: bool = False
+    SENTRY_RELEASE: str | None = None
 
     @field_validator("ENVIRONMENT")
     @classmethod
