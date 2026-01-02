@@ -5,6 +5,7 @@ Main FastAPI application.
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any, cast
 
 import sentry_sdk
 from fastapi import FastAPI
@@ -78,7 +79,8 @@ def create_application() -> FastAPI:
 
     if SENTRY_ENABLED:
         # Ensure Sentry wraps the ASGI app so requests become transactions in APM.
-        app.add_middleware(SentryAsgiMiddleware)
+        # sentry-sdk's type hints don't match Starlette's middleware protocol perfectly; runtime is OK.
+        app.add_middleware(cast(Any, SentryAsgiMiddleware))
 
     # Configure CORS to allow requests from any origin
     app.add_middleware(
