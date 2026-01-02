@@ -2,9 +2,9 @@
 Main FastAPI application.
 """
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-import logging
 
 import sentry_sdk
 from fastapi import FastAPI
