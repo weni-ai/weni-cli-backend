@@ -2,8 +2,7 @@ import logging
 from collections.abc import Awaitable, Callable
 
 import requests
-from elasticapm.contrib.starlette import ElasticAPM, make_apm_client
-from fastapi import FastAPI, Request, Response, status
+from fastapi import Request, Response, status
 from packaging.version import InvalidVersion, Version
 
 from app.clients.connect_client import ConnectClient
@@ -11,18 +10,10 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-apm = make_apm_client({
-    'SERVICE_NAME': settings.ELASTIC_APM_SERVICE_NAME,
-    'SECRET_TOKEN': settings.ELASTIC_APM_SECRET_TOKEN,
-    'SERVER_URL': settings.ELASTIC_APM_SERVER_URL,
-})
-app = FastAPI()
-app.add_middleware(ElasticAPM, client=apm)
-
 
 NO_AUTH_ENDPOINTS = ["/api/v1/health", "/api/v1/health/", "/api/v1/permissions/verify"]
 NO_VERSION_CHECK_ENDPOINTS = ["/api/v1/health", "/api/v1/health/"]
-ACCEPTABLE_ROLES = [2, 3, 4] # 2 = contributor, 3 = moderator, 4 = support
+ACCEPTABLE_ROLES = [2, 3, 4]  # 2 = contributor, 3 = moderator, 4 = support
 
 
 class AuthorizationMiddleware:
@@ -46,7 +37,7 @@ class AuthorizationMiddleware:
         try:
             response = connect_client.check_authorization()
             response_data = response.json()
-            
+
             if response.status_code != status.HTTP_200_OK:
                 return Response(status_code=status.HTTP_401_UNAUTHORIZED)
 
@@ -56,7 +47,7 @@ class AuthorizationMiddleware:
                     logger.info(f"User with role {user_role} attempted to push. Access denied.")
                     return Response(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        content="Your role does not have permission to push agents"
+                        content="Your role does not have permission to push agents",
                     )
 
         except requests.exceptions.RequestException as e:
