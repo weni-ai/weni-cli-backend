@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     SENTRY_DEBUG: bool = False
     SENTRY_RELEASE: str | None = None
 
+    # Elastic APM settings
+    ELASTIC_APM_SERVICE_NAME: str = "weni-cli-backend"
+    ELASTIC_APM_SERVER_URL: str = "https://apm.weni.ai"
+    ELASTIC_APM_SECRET_TOKEN: str = "change-me"
+    ELASTIC_APM_LOG_LEVEL: str = "INFO"
+    ELASTIC_APM_ENVIRONMENT: str = "production"
+
     @field_validator("ENVIRONMENT")
     @classmethod
     def validate_environment(cls, value: str) -> str:  # pragma: no cover

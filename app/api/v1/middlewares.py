@@ -2,13 +2,23 @@ import logging
 from collections.abc import Awaitable, Callable
 
 import requests
-from fastapi import Request, Response, status
+from elasticapm.contrib.starlette import ElasticAPM, make_apm_client
+from fastapi import FastAPI, Request, Response, status
 from packaging.version import InvalidVersion, Version
 
 from app.clients.connect_client import ConnectClient
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+apm = make_apm_client({
+    'SERVICE_NAME': settings.ELASTIC_APM_SERVICE_NAME,
+    'SECRET_TOKEN': settings.ELASTIC_APM_SECRET_TOKEN,
+    'SERVER_URL': settings.ELASTIC_APM_SERVER_URL,
+})
+app = FastAPI()
+app.add_middleware(ElasticAPM, client=apm)
+
 
 NO_AUTH_ENDPOINTS = ["/api/v1/health", "/api/v1/health/", "/api/v1/permissions/verify"]
 NO_VERSION_CHECK_ENDPOINTS = ["/api/v1/health", "/api/v1/health/"]

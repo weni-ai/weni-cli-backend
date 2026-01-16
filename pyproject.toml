@@ -19,6 +19,7 @@ requests = "^2.32.3"
 httpx = "^0.28.1"
 sentry-sdk = {extras = ["fastapi"], version = "^2.22.0"}
 packaging = "^24.2"
+elastic-apm = "^6.25.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.9.8"
