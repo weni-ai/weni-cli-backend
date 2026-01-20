@@ -3,7 +3,7 @@
 import base64
 import json
 from http import HTTPStatus
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 import requests
@@ -91,7 +91,7 @@ class TestFlowsClient:
         assert parsed_url.path == "/api/v2/internals/channel/"
 
     def test_create_channel_request_body(self, requests_mock: requests_mock.Mocker) -> None:
-        """Test that create_channel sends the correct request body as JSON."""
+        """Test that create_channel sends the correct request body as form-data."""
         # Arrange
         client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
         expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channel/"
@@ -105,21 +105,21 @@ class TestFlowsClient:
         # Assert
         assert response.status_code == HTTPStatus.CREATED
 
-        # Verify request body follows the correct format
+        # Verify request body follows the correct format (x-www-form-urlencoded)
         assert requests_mock.last_request is not None
-        request_json = requests_mock.last_request.json()
-        
-        # ClaimView expects these fields at top level
-        assert request_json["org"] == self.TEST_PROJECT_UUID
-        assert request_json["user"] == self.TEST_USER_EMAIL
-        assert request_json["channeltype_code"] == "WAC"
-        assert request_json["name"] == "Test Channel"
-        assert request_json["address"] == "+5511999999999"
-        assert request_json["schemes"] == ["tel"]
-        
-        # Config data should be nested under 'data' key
-        assert "data" in request_json
-        assert request_json["data"] == {"wa_pin": "123456", "wa_verified_name": "Test Business"}
+        form_data = parse_qs(requests_mock.last_request.text)
+
+        assert form_data["org"][0] == self.TEST_PROJECT_UUID
+        assert form_data["user"][0] == self.TEST_USER_EMAIL
+        assert form_data["channeltype_code"][0] == "WAC"
+        assert form_data["name"][0] == "Test Channel"
+        assert form_data["address"][0] == "+5511999999999"
+        assert form_data["schemes"][0] == "tel"
+
+        # Config data is sent as a JSON string under "data"
+        assert "data" in form_data
+        data_obj = json.loads(form_data["data"][0])
+        assert data_obj == {"wa_pin": "123456", "wa_verified_name": "Test Business"}
 
     @pytest.mark.parametrize(
         "exception_class,exception_message",

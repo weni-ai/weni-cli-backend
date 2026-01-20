@@ -70,19 +70,24 @@ class FlowsClient:
         address = channel_definition.get("address", "")
         config = channel_definition.get("config", {})
 
-        # Build the payload according to Flows API format
-        # The endpoint requires 'org' and 'user'. channeltype_code is needed for type selection
-        payload = {
-            "org": self.project_uuid,
+        # Flows' ClaimView prioritizes form fields (request.POST) over JSON body for name/address/schemes.
+        # Sending as x-www-form-urlencoded ensures these fields are reliably captured.
+        if isinstance(schemes, list):
+            schemes_str = ",".join([s for s in schemes if isinstance(s, str) and s.strip()])
+        else:
+            schemes_str = ""
+        data_str = json.dumps(config) if isinstance(config, dict) else str(config)
+
+        form_data = {
             "user": self.user_email,
+            "org": self.project_uuid,
             "channeltype_code": channel_type,
             "name": name,
             "address": address,
-            "schemes": schemes,
-            "data": config,
+            "schemes": schemes_str,
+            "data": data_str,
         }
 
-        # Send as JSON - ClaimView will parse it and extract fields
-        response = requests.post(url, headers=self.headers, json=payload)
+        response = requests.post(url, headers=self.headers, data=form_data)
 
         return response
