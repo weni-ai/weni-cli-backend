@@ -107,13 +107,21 @@ class FlowsClient:
         address = channel_definition.get("address", "")
         config = channel_definition.get("config", {})
 
-        # Flows' ClaimView prioritizes form fields (request.POST) over JSON body for name/address/schemes.
-        # Sending as x-www-form-urlencoded ensures these fields are reliably captured.
+        # The Flows internal endpoint (rapidpro-apps) forwards only `data` into the claim view POST.
+        # To make sure E2 (External API V2) saves the intended name/schemes/address, include them in `data`.
         if isinstance(schemes, list):
             schemes_str = ",".join([s for s in schemes if isinstance(s, str) and s.strip()])
         else:
             schemes_str = ""
-        data_str = json.dumps(config) if isinstance(config, dict) else str(config)
+        data_payload: dict[str, Any] = dict(config) if isinstance(config, dict) else {"config": config}
+        # Only set if absent to avoid overriding user-provided config keys.
+        if isinstance(name, str) and name.strip() and "name" not in data_payload:
+            data_payload["name"] = name.strip()
+        if isinstance(address, str) and address.strip() and "address" not in data_payload:
+            data_payload["address"] = address.strip()
+        if isinstance(schemes, list) and schemes and "schemes" not in data_payload:
+            data_payload["schemes"] = schemes
+        data_str = json.dumps(data_payload)
 
         form_data = {
             "user": self.user_email,

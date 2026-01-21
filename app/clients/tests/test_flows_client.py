@@ -119,7 +119,14 @@ class TestFlowsClient:
         # Config data is sent as a JSON string under "data"
         assert "data" in form_data
         data_obj = json.loads(form_data["data"][0])
-        assert data_obj == {"wa_pin": "123456", "wa_verified_name": "Test Business"}
+        # data includes the config plus extra fields needed by Flows' internal endpoint
+        assert data_obj == {
+            "wa_pin": "123456",
+            "wa_verified_name": "Test Business",
+            "name": "Test Channel",
+            "address": "+5511999999999",
+            "schemes": ["tel"],
+        }
 
     @pytest.mark.parametrize(
         "exception_class,exception_message",
