@@ -1,11 +1,14 @@
 import base64
 import json
+import logging
 from typing import Any
 
 import requests
 from requests import Response
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # JWT token constants
 JWT_PARTS_COUNT = 3  # header.payload.signature
@@ -36,6 +39,7 @@ class FlowsClient:
             # JWT format: header.payload.signature
             parts = token.split(".")
             if len(parts) != JWT_PARTS_COUNT:
+                logger.warning("Invalid JWT token format")
                 return ""
 
             # Decode payload (second part)
@@ -52,7 +56,8 @@ class FlowsClient:
             email = payload_data.get("email", "")
             return email if isinstance(email, str) else str(email)
 
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to extract email from token: {e}")
             return ""
 
     def create_channel(self, channel_definition: dict) -> Response:
@@ -84,4 +89,6 @@ class FlowsClient:
             "data": data_str,
         }
 
-        return requests.post(url, headers=self.headers, data=form_data)
+        response = requests.post(url, headers=self.headers, data=form_data)
+
+        return response

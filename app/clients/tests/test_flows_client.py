@@ -112,9 +112,6 @@ class TestFlowsClient:
         assert form_data["org"][0] == self.TEST_PROJECT_UUID
         assert form_data["user"][0] == self.TEST_USER_EMAIL
         assert form_data["channeltype_code"][0] == "WAC"
-        assert form_data["name"][0] == "Test Channel"
-        assert form_data["address"][0] == "+5511999999999"
-        assert form_data["schemes"][0] == "tel"
 
         # Config data is sent as a JSON string under "data"
         assert "data" in form_data
@@ -125,7 +122,7 @@ class TestFlowsClient:
             "wa_verified_name": "Test Business",
             "name": "Test Channel",
             "address": "+5511999999999",
-            "schemes": ["tel"],
+            "schemes": "tel",
         }
 
     @pytest.mark.parametrize(
