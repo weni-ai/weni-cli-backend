@@ -39,6 +39,8 @@ class ActiveAgentProcessor:
             default_packages = [
                 Package("weni-agents-toolkit", self.toolkit_version),
                 Package("sentry-sdk", "2.24.1"),
+                # Optional observability for the generated AWS Lambda
+                Package("elastic-apm", "6.25.0"),
             ]
 
             packager = Packager(package_dir)

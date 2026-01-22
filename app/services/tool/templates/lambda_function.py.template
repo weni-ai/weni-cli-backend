@@ -7,6 +7,17 @@ sentry_sdk.init(
     traces_sample_rate=1.0,
 )
 
+try:
+    # Elastic APM for AWS Lambda (optional)
+    # Requires env vars like ELASTIC_APM_SERVER_URL / ELASTIC_APM_SECRET_TOKEN.
+    from elasticapm.contrib.serverless.aws import capture_serverless
+except Exception:  # pragma: no cover
+    def capture_serverless(*args, **kwargs):  # type: ignore[no-redef]
+        def decorator(func):
+            return func
+
+        return decorator
+
 def load_value(data):
     value = {}
 
@@ -24,6 +35,7 @@ from weni.context import Context
 from tool.{module} import {class_name}
 
 
+@capture_serverless()
 def lambda_handler(event, context):
     actionGroup = event.get('actionGroup')
     function = event.get('function')
