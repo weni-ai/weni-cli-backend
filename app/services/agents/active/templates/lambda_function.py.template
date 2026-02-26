@@ -23,7 +23,7 @@ def select_template_official_rules(data, rules, classname_to_key_map, template_m
         if classname_to_key_map.get(rule.__class__.__name__, None) in ignored_rules_keys:
             continue
 
-        matched, traces = rule.execute(data=data)
+        matched, traces = rule(data)
         if matched:
             return template_map[rule.__class__.__name__], rule.get_template_variables(data=data), traces
 
@@ -33,7 +33,7 @@ def select_template_official_rules(data, rules, classname_to_key_map, template_m
 def select_template_project_rules(data, rules):
     for rule in rules:
         rule_instance = rule["instance"]
-        matched, traces = rule_instance.execute(data=data)
+        matched, traces = rule_instance(data)
         if matched:
             return rule.get("template"), rule_instance.get_template_variables(data=data), traces
 
