@@ -51,7 +51,13 @@ def lambda_handler(event, context):
     )
 
     try:
-        result, format, events = {class_name}(context)
+        tool_response = {class_name}(context)
+        # unpack return values (result, format, events[, traces])
+        if isinstance(tool_response, tuple) and len(tool_response) == 4:
+            result, format, events, traces = tool_response
+        else:
+            result, format, events = tool_response
+            traces = None
     except Exception as error:
         sentry_sdk.capture_exception(error)
         raise error
@@ -62,13 +68,17 @@ def lambda_handler(event, context):
         }
     }
 
+    session_attrs = {'events': json.dumps(events)}
+    if traces is not None:
+        session_attrs['traces'] = json.dumps(traces)
+
     action_response = {
         'actionGroup': actionGroup,
         'function': function,
         'functionResponse': {
             'responseBody': responseBody
         },
-        'sessionAttributes': {'events': json.dumps(events)},
+        'sessionAttributes': session_attrs,
         'promptSessionAttributes': {
             'alwaysFormat': f"<example>{format}</example>"
         }
