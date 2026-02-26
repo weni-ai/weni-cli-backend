@@ -19,25 +19,29 @@ from preprocessor.{preprocessor_module} import {preprocessor_class}
 
 
 def select_template_official_rules(data, rules, classname_to_key_map, template_map, ignored_rules_keys):
+    last_traces = {}
     for rule in rules:
         if classname_to_key_map.get(rule.__class__.__name__, None) in ignored_rules_keys:
             continue
 
         matched, traces = rule(data)
+        last_traces = traces
         if matched:
             return template_map[rule.__class__.__name__], rule.get_template_variables(data=data), traces
 
-    return None, None, {}
+    return None, None, last_traces
 
 
 def select_template_project_rules(data, rules):
+    last_traces = {}
     for rule in rules:
         rule_instance = rule["instance"]
         matched, traces = rule_instance(data)
+        last_traces = traces
         if matched:
             return rule.get("template"), rule_instance.get_template_variables(data=data), traces
 
-    return None, None, {}
+    return None, None, last_traces
 
 
 def json_load_field(field, default_value):
