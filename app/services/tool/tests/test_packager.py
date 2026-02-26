@@ -215,8 +215,7 @@ class TestBuildLambdaFunctionFile:
         assert "from weni.context import Context" in result
         assert f"from tool.{module_name} import {class_name}" in result
         assert "def lambda_handler(event, context):" in result
-        assert f"tool_response = {class_name}(context)" in result
-        assert "if isinstance(tool_response, tuple)" in result
+        assert f"result, format, events, traces = {class_name}(context)" in result
         assert "'events'" in result
         assert "'traces'" in result
         assert "dummy_function_response = {'response': action_response, 'messageVersion': '1.0'}" in result
@@ -236,8 +235,7 @@ class TestBuildLambdaFunctionFile:
         result = packager.build_lambda_function_file(template_path, replacements)
 
         assert f"from tool.{module_name} import {class_name}" in result
-        assert f"tool_response = {class_name}(context)" in result
-        assert "if isinstance(tool_response, tuple)" in result
+        assert f"result, format, events, traces = {class_name}(context)" in result
         # Ensure other parts of the template are intact
         assert "load_value(session_attributes.get('credentials'))" in result
         assert "promptSessionAttributes" in result
