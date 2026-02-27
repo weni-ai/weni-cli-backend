@@ -97,6 +97,26 @@ def create_application() -> FastAPI:
     version_check_middleware = VersionCheckMiddleware()
     app.add_middleware(BaseHTTPMiddleware, dispatch=version_check_middleware)
 
+    # Optional Elastic APM (Starlette/FastAPI middleware)
+    # Only enable when explicitly configured to avoid noisy timeouts.
+    if settings.ELASTIC_APM_SECRET_TOKEN and settings.ELASTIC_APM_SECRET_TOKEN != "change-me":
+        try:
+            from elasticapm.contrib.starlette import ElasticAPM, make_apm_client
+
+            apm = make_apm_client(
+                {
+                    "SERVICE_NAME": settings.ELASTIC_APM_SERVICE_NAME,
+                    "SECRET_TOKEN": settings.ELASTIC_APM_SECRET_TOKEN,
+                    "SERVER_URL": settings.ELASTIC_APM_SERVER_URL,
+                    "ENVIRONMENT": settings.ELASTIC_APM_ENVIRONMENT,
+                    "LOG_LEVEL": settings.ELASTIC_APM_LOG_LEVEL,
+                }
+            )
+            app.add_middleware(ElasticAPM, client=apm)
+        except ImportError:  # pragma: no cover
+            # APM is optional; app still runs without it.
+            pass
+
     # Include routers
     app.include_router(api_v1_router, prefix=settings.API_PREFIX)
 

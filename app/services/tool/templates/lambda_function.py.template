@@ -53,7 +53,7 @@ def lambda_handler(event, context):
     )
 
     try:
-        result, format, events = {class_name}(context)
+        result, format, events, broadcast_events = {class_name}(context)
     except Exception as error:
         sentry_sdk.capture_exception(error)
         raise error
@@ -70,7 +70,10 @@ def lambda_handler(event, context):
         'functionResponse': {
             'responseBody': responseBody
         },
-        'sessionAttributes': {'events': json.dumps(events)},
+        'sessionAttributes': {
+            'events': json.dumps(events),
+            'broadcastEvents': json.dumps(broadcast_events),
+        },
         'promptSessionAttributes': {
             'alwaysFormat': f"<example>{format}</example>"
         }
