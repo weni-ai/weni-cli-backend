@@ -21,23 +21,29 @@ from preprocessor.{preprocessor_module} import {preprocessor_class}
 
 
 def select_template_official_rules(data, rules, classname_to_key_map, template_map, ignored_rules_keys):
+    last_traces = {}
     for rule in rules:
         if classname_to_key_map.get(rule.__class__.__name__, None) in ignored_rules_keys:
             continue
 
-        if rule.execute(data=data):
-            return template_map[rule.__class__.__name__], rule.get_template_variables(data=data)
+        matched, traces = rule(data)
+        last_traces = traces
+        if matched:
+            return template_map[rule.__class__.__name__], rule.get_template_variables(data=data), traces
 
-    return None, None
+    return None, None, last_traces
 
 
 def select_template_project_rules(data, rules):
+    last_traces = {}
     for rule in rules:
         rule_instance = rule["instance"]
-        if rule_instance.execute(data=data):
-            return rule.get("template"), rule_instance.get_template_variables(data=data)
+        matched, traces = rule_instance(data)
+        last_traces = traces
+        if matched:
+            return rule.get("template"), rule_instance.get_template_variables(data=data), traces
 
-    return None, None
+    return None, None, last_traces
 
 
 def json_load_field(field, default_value):
@@ -77,21 +83,24 @@ class ResponseStatus(Enum):
     GLOBAL_RULE_NOT_MATCHED = 6
 
 class LambdaResponse:
-    def __init__(self, status: ResponseStatus, template: str, template_variables: dict, contact_urn: str, error: dict = {}):
+    def __init__(self, status: ResponseStatus, template: str, template_variables: dict, contact_urn: str, error: dict = {}, traces: dict = {}):
         self.status = status
         self.template = template
         self.template_variables = template_variables
         self.contact_urn = contact_urn
         self.error = error
+        self.traces = traces
 
     def to_dict(self):
-        return {
+        response = {
             "status": self.status.value,
             "template": self.template,
             "template_variables": self.template_variables,
             "contact_urn": self.contact_urn,
             "error": self.error,
+            "traces": self.traces,
         }
+        return response
 
 
 def lambda_handler(event, context):
@@ -109,9 +118,8 @@ def lambda_handler(event, context):
 
     context: Context = PreProcessorContext(credentials=credentials, params=params, payload=payload, project=project)
 
-    # Apply preprocessing
     try:
-        preprocess_result = {preprocessor_class}(context)
+        preprocess_result, preprocessor_traces = {preprocessor_class}(context)
     except Exception as error:
         sentry_sdk.capture_exception(error)
         return LambdaResponse(
@@ -119,7 +127,8 @@ def lambda_handler(event, context):
             template=None,
             template_variables={},
             contact_urn=None,
-            error=str(error)
+            error=str(error),
+            traces={},
         ).to_dict()
 
     # Check if global rule is matched
@@ -132,6 +141,7 @@ def lambda_handler(event, context):
                     template=None,
                     template_variables={},
                     contact_urn=None,
+                    traces={"preprocessor": preprocessor_traces},
                 ).to_dict()
     except Exception as error:
         sentry_sdk.capture_exception(error)
@@ -140,15 +150,17 @@ def lambda_handler(event, context):
             template=None,
             template_variables={},
             contact_urn=None,
-            error=str(error)
+            error=str(error),
+            traces={"preprocessor": preprocessor_traces},
         ).to_dict()
 
     # Try our project rules
+    project_rule_traces = {}
     try:
         for rule in project_rules:
             rule["instance"] = initialize_rule(rule)
     
-        template, template_variables = select_template_project_rules(preprocess_result, project_rules)
+        template, template_variables, project_rule_traces = select_template_project_rules(preprocess_result, project_rules)
     except Exception as error:
         sentry_sdk.capture_exception(error)
         return LambdaResponse(
@@ -156,14 +168,16 @@ def lambda_handler(event, context):
             template=None,
             template_variables={},
             contact_urn=None,
-            error=str(error)
+            error=str(error),
+            traces={"preprocessor": preprocessor_traces, "project_rule": project_rule_traces},
         ).to_dict()
 
     # Project rules did not match, try our official rules
+    official_rule_traces = {}
     try:
         if not template:
             official_rules = [{official_rules_instances}]
-            template, template_variables = select_template_official_rules(
+            template, template_variables, official_rule_traces = select_template_official_rules(
                 preprocess_result,
                 official_rules,
                 classname_to_key_map,
@@ -177,22 +191,36 @@ def lambda_handler(event, context):
             template=None,
             template_variables={},
             contact_urn=None,
-            error=str(error)
+            error=str(error),
+            traces={"preprocessor": preprocessor_traces, "project_rule": project_rule_traces, "official_rule": official_rule_traces},
         ).to_dict()
 
     if not template:
+        combined_traces = {
+            "preprocessor": preprocessor_traces,
+            "project_rule": project_rule_traces,
+            "official_rule": official_rule_traces,
+        }
+
         return LambdaResponse(
             status=ResponseStatus.RULE_NOT_MATCHED,
             template=None,
             template_variables={},
             contact_urn=None,
-            error={"message": "No template found"}
+            error={"message": "No template found"},
+            traces=combined_traces,
         ).to_dict()
 
+    combined_traces = {
+        "preprocessor": preprocessor_traces,
+        "project_rule": project_rule_traces,
+        "official_rule": official_rule_traces,
+    }
 
     return LambdaResponse(
         status=ResponseStatus.RULE_MATCHED,
         template=template,
         template_variables=template_variables,
         contact_urn=preprocess_result.urn,
+        traces=combined_traces,
     ).to_dict()
