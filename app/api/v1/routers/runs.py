@@ -158,7 +158,6 @@ async def run_tool_test(  # noqa: PLR0915
                 for key, value in test_data.get("parameters", {}).items():
                     parameters.append({"name": key, "value": value})
 
-                # Gerar JWT e injetar nas credentials
                 credentials = test_data.get("credentials", data.tool_credentials)
                 if isinstance(credentials, str):
                     credentials = json.loads(credentials)
