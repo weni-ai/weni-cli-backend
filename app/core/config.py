@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     AGENT_LOG_GROUP: str = ""
     AWS_REGION_NAME: str = "us-east-1"
 
+    # JWT settings
+    JWT_SECRET_KEY: str = ""
+
     # Sentry settings
     SENTRY_DSN: str = ""
     FUNCTION_SENTRY_DSN: str = ""
