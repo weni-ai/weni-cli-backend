@@ -24,10 +24,10 @@ def select_template_official_rules(data, rules, classname_to_key_map, template_m
         if classname_to_key_map.get(rule.__class__.__name__, None) in ignored_rules_keys:
             continue
 
-        matched, traces = rule(data)
+        rule_instance, matched, traces = rule(data)
         last_traces = traces
         if matched:
-            return template_map[rule.__class__.__name__], rule.get_template_variables(data=data), traces
+            return template_map[rule_instance.__class__.__name__], rule_instance.get_template_variables(data=data), traces
 
     return None, None, last_traces
 
