@@ -179,11 +179,11 @@ def test_mount_rule_class_to_template_map(active_agent_resource_model_fixture: A
     )
     assert processor.mount_rule_class_to_template_map() == {"Rule1": "rule1_template", "Rule2": "rule2_template"}
 
-def test_mount_rule_instances_list(active_agent_resource_model_fixture: ActiveAgentResourceModel) -> None:
+def test_mount_rule_classes_list(active_agent_resource_model_fixture: ActiveAgentResourceModel) -> None:
     processor = ActiveAgentProcessor(
         project_uuid="test_project_uuid", toolkit_version="0.1.0", agent_resource=active_agent_resource_model_fixture
     )
-    assert processor.mount_rule_instances_list() == "Rule1(), Rule2()"
+    assert processor.mount_rule_classes_list() == "Rule1, Rule2"
 
 def test_mount_rule_classname_to_key_map(active_agent_resource_model_fixture: ActiveAgentResourceModel) -> None:
     processor = ActiveAgentProcessor(
