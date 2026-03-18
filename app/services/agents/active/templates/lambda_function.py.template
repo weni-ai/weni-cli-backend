@@ -174,7 +174,7 @@ def lambda_handler(event, context):
     official_rule_traces = {}
     try:
         if not template:
-            official_rules = [{official_rules_instances}]
+            official_rules = [{official_rules_classes}]
             template, template_variables, official_rule_traces = select_template_official_rules(
                 preprocess_result,
                 official_rules,
