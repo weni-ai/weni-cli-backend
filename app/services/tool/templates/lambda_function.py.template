@@ -51,7 +51,8 @@ def lambda_handler(event, context):
     )
 
     try:
-        result, format, events = {class_name}(context)
+        # tool always returns (result, format, events, traces) as of toolkit change
+        result, format, events, traces = {class_name}(context)
     except Exception as error:
         sentry_sdk.capture_exception(error)
         raise error
@@ -62,13 +63,18 @@ def lambda_handler(event, context):
         }
     }
 
+    session_attrs = {
+        'events': json.dumps(events),
+        'traces': json.dumps(traces)
+    }
+
     action_response = {
         'actionGroup': actionGroup,
         'function': function,
         'functionResponse': {
             'responseBody': responseBody
         },
-        'sessionAttributes': {'events': json.dumps(events)},
+        'sessionAttributes': session_attrs,
         'promptSessionAttributes': {
             'alwaysFormat': f"<example>{format}</example>"
         }
