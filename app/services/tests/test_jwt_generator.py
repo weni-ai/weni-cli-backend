@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.services.jwt_generator import (
     DEFAULT_EXPIRATION_MINUTES,
-    JWT_CREDENTIALS_KEY,
+    JWT_PROJECT_KEY,
     generate_jwt_token,
 )
 
@@ -100,6 +100,6 @@ class TestGenerateJwtToken:
         decoded = jwt.decode(token, public_key, algorithms=["RS256"])
         assert decoded["project_uuid"] == project_uuid
 
-    def test_jwt_credentials_key_constant(self) -> None:
-        """Test that JWT_CREDENTIALS_KEY is 'Token'."""
-        assert JWT_CREDENTIALS_KEY == "Token"
+    def test_jwt_project_key_constant(self) -> None:
+        """Test that JWT_PROJECT_KEY is 'auth-token'."""
+        assert JWT_PROJECT_KEY == "auth-token"
