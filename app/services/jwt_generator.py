@@ -28,9 +28,10 @@ def generate_jwt_token(
         The encoded JWT token string.
     """
     exp_minutes = expiration_minutes or DEFAULT_EXPIRATION_MINUTES
+    normalized_key = secret_key.replace("\\n", "\n")
     payload = {
         "project_uuid": project_uuid,
         "exp": datetime.now(UTC) + timedelta(minutes=exp_minutes),
         "iat": datetime.now(UTC),
     }
-    return jwt.encode(payload, secret_key, algorithm="RS256")
+    return jwt.encode(payload, normalized_key, algorithm="RS256")
