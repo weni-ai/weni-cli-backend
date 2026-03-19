@@ -15,7 +15,9 @@ from starlette.datastructures import UploadFile
 from app.api.v1.models.requests import RunToolRequestModel
 from app.clients.aws import AWSLambdaClient
 from app.clients.aws.lambda_client import LambdaFunction
+from app.core.config import settings
 from app.core.response import CLIResponse, send_response
+from app.services.jwt_generator import JWT_CREDENTIALS_KEY, generate_jwt_token
 from app.services.tool.packager import process_tool
 
 router = APIRouter()
@@ -49,7 +51,7 @@ async def run_tool_test(  # noqa: PLR0915
     function_name = f"cli-{str(uuid4())}"
     lambda_client = AWSLambdaClient()
 
-    async def response_stream() -> AsyncIterator[bytes]:
+    async def response_stream() -> AsyncIterator[bytes]:  # noqa: PLR0915
         try:
             initial_data: CLIResponse = {
                 "message": "Processing test run...",
@@ -156,6 +158,13 @@ async def run_tool_test(  # noqa: PLR0915
                 for key, value in test_data.get("parameters", {}).items():
                     parameters.append({"name": key, "value": value})
 
+                credentials = test_data.get("credentials", data.tool_credentials)
+                if isinstance(credentials, str):
+                    credentials = json.loads(credentials)
+
+                token = generate_jwt_token(str(data.project_uuid), settings.JWT_SECRET_KEY)
+                credentials[JWT_CREDENTIALS_KEY] = token
+
                 test_event = {
                     "agent_key": data.agent_key,
                     "action_group": lambda_function.name,
@@ -164,7 +173,7 @@ async def run_tool_test(  # noqa: PLR0915
                     "sessionAttributes": {
                         "project": json.dumps(test_data.get("project", {})),
                         "contact": json.dumps(test_data.get("contact", {})),
-                        "credentials": json.dumps(test_data.get("credentials", data.tool_credentials)),
+                        "credentials": json.dumps(credentials),
                         "globals": json.dumps(test_data.get("globals", data.tool_globals)),
                     },
                 }
