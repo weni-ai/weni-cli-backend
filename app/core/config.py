@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     ELASTIC_APM_LOG_LEVEL: str = "INFO"
     ELASTIC_APM_ENVIRONMENT: str = "production"
 
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def normalize_jwt_secret_key(cls, value: str) -> str:  # pragma: no cover
+        """Normalize PEM key newlines from environment variables."""
+        return value.replace("\\n", "\n")
+
     @field_validator("ENVIRONMENT")
     @classmethod
     def validate_environment(cls, value: str) -> str:  # pragma: no cover
