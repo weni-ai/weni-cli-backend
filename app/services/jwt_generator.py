@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import jwt
 
 DEFAULT_EXPIRATION_MINUTES = 2
-JWT_CREDENTIALS_KEY = "Token"
+JWT_PROJECT_KEY = "auth-token"
 
 
 def generate_jwt_token(

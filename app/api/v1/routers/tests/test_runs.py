@@ -688,15 +688,15 @@ class TestRunToolEndpoint:
         # Assert
         assert response.status_code == status.HTTP_200_OK
 
-        # Verify invoke_function was called with credentials containing the Token
+        # Verify invoke_function was called with project containing the auth-token
         invoke_calls = mock_lambda_client.invoke_function.call_args_list
         assert len(invoke_calls) > 0
 
         for call in invoke_calls:
             test_event = call[0][1]  # second positional arg is the event
-            credentials = json.loads(test_event["sessionAttributes"]["credentials"])
-            assert "Token" in credentials, "JWT Token should always be injected into credentials"
-            assert credentials["Token"] == "mocked-jwt-token"
+            project = json.loads(test_event["sessionAttributes"]["project"])
+            assert "auth-token" in project, "JWT Token should always be injected into project"
+            assert project["auth-token"] == "mocked-jwt-token"
 
     def test_empty_tool_zip_bytes(
         self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture, mock_auth_middleware: None
