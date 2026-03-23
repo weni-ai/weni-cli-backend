@@ -101,5 +101,5 @@ class TestGenerateJwtToken:
         assert decoded["project_uuid"] == project_uuid
 
     def test_jwt_project_key_constant(self) -> None:
-        """Test that JWT_PROJECT_KEY is 'auth-token'."""
-        assert JWT_PROJECT_KEY == "auth-token"
+        """Test that JWT_PROJECT_KEY is 'auth_token'."""
+        assert JWT_PROJECT_KEY == "auth_token"
