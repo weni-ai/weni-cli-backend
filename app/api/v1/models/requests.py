@@ -51,3 +51,12 @@ class CreateChannelRequestModel(BaseModel):
 
     project_uuid: UUID4
     channel_definition: dict[str, Any]
+
+
+class RunEvaluationRequestModel(BaseModel):
+    """Run evaluation request model."""
+
+    evaluator: dict[str, Any]
+    target: dict[str, Any]
+    tests: dict[str, Any]
+    filter: str | None = None
