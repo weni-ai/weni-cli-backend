@@ -74,7 +74,7 @@ def configurator(
     }
     toolkit_version = "1.0.0"
     request_id = "test-request-id"
-    authorization = "test-auth-token"
+    authorization = "test-auth_token"
     return ActiveAgentConfigurator(project_uuid, definition, toolkit_version, request_id, authorization)
 
 
