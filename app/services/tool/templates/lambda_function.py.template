@@ -51,7 +51,7 @@ def lambda_handler(event, context):
     )
 
     try:
-        result, format, events, traces, broadcast_events = {class_name}(context)
+        result, format, events, traces = {class_name}(context)
     except Exception as error:
         sentry_sdk.capture_exception(error)
         raise error
@@ -65,7 +65,6 @@ def lambda_handler(event, context):
     session_attrs = {
         'events': json.dumps(events),
         'traces': json.dumps(traces),
-        'broadcastEvents': json.dumps(broadcast_events)
     }
 
     action_response = {
