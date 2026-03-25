@@ -11,6 +11,7 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 
+from app.clients.aws.lambda_client import LambdaFunction
 from app.core.config import settings
 from app.main import app
 from app.tests.utils import AsyncMock
@@ -634,6 +635,68 @@ class TestRunToolEndpoint:
         error_responses = [r for r in response_data if r.get("success") is False]
         assert len(error_responses) > 0
         assert f"Could not find tool {TEST_TOOL_KEY}" in str(error_responses[-1])
+
+    def test_jwt_always_injected_in_credentials(
+        self,
+        post_run_request_factory: Callable[[], Any],
+        mocker: MockerFixture,
+        mock_auth_middleware: None,
+    ) -> None:
+        """Test that JWT token is always injected into credentials."""
+        # Setup - mock process_tool to succeed
+        mock_process_result = {
+            "message": "Tool processed successfully",
+            "data": {"tool_key": TEST_TOOL_KEY},
+            "success": True,
+            "code": "TOOL_PROCESSED",
+        }
+        mocker.patch(
+            "app.api.v1.routers.runs.process_tool",
+            new=AsyncMock(return_value=(mock_process_result, io.BytesIO(TEST_CONTENT))),
+        )
+
+        # Mock Lambda client
+        mock_lambda_client = mocker.MagicMock()
+        mock_lambda_client.create_function = mocker.MagicMock(
+            return_value=LambdaFunction(
+                arn=TEST_FUNCTION_ARN,
+                name=TEST_FUNCTION_NAME,
+                log_group="test-log-group",
+            )
+        )
+        mock_lambda_client.wait_for_function_active = AsyncMock(return_value=True)
+        mock_lambda_client.invoke_function = mocker.MagicMock(
+            return_value=(
+                {"response": {"result": "success"}, "status_code": 200, "logs": ""},
+                TEST_START_TIME,
+                TEST_END_TIME,
+            )
+        )
+        mock_lambda_client.delete_function = mocker.MagicMock(return_value=None)
+        mocker.patch("app.api.v1.routers.runs.AWSLambdaClient", return_value=mock_lambda_client)
+        mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
+
+        # Mock generate_jwt_token to return a predictable token
+        mocker.patch(
+            "app.api.v1.routers.runs.generate_jwt_token",
+            return_value="mocked-jwt-token",
+        )
+
+        # Execute
+        response = post_run_request_factory()
+
+        # Assert
+        assert response.status_code == status.HTTP_200_OK
+
+        # Verify invoke_function was called with project containing the auth_token
+        invoke_calls = mock_lambda_client.invoke_function.call_args_list
+        assert len(invoke_calls) > 0
+
+        for call in invoke_calls:
+            test_event = call[0][1]  # second positional arg is the event
+            project = json.loads(test_event["sessionAttributes"]["project"])
+            assert "auth_token" in project, "JWT Token should always be injected into project"
+            assert project["auth_token"] == "mocked-jwt-token"
 
     def test_empty_tool_zip_bytes(
         self, post_run_request_factory: Callable[[], Any], mocker: MockerFixture, mock_auth_middleware: None
