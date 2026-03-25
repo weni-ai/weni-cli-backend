@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from app.api.v1.routers.agents import router as agents_router
 from app.api.v1.routers.channels import router as channels_router
+from app.api.v1.routers.evaluations import router as evaluations_router
 from app.api.v1.routers.health import router as health_router
 from app.api.v1.routers.permissions import router as permissions_router
 from app.api.v1.routers.runs import router as runs_router
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/v1")
 router.include_router(health_router, prefix="/health", tags=["Health"])
 router.include_router(agents_router, prefix="/agents", tags=["Agents"])
 router.include_router(runs_router, prefix="/runs", tags=["Runs"])
+router.include_router(evaluations_router, prefix="/evaluations", tags=["Evaluations"])
 router.include_router(permissions_router, prefix="/permissions", tags=["Permissions"])
 router.include_router(tool_logs_router, prefix="/tool-logs", tags=["Tool Logs"])
 router.include_router(channels_router, prefix="/channels", tags=["Channels"])
