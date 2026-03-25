@@ -15,7 +15,9 @@ from starlette.datastructures import UploadFile
 from app.api.v1.models.requests import RunToolRequestModel
 from app.clients.aws import AWSLambdaClient
 from app.clients.aws.lambda_client import LambdaFunction
+from app.core.config import settings
 from app.core.response import CLIResponse, send_response
+from app.services.jwt_generator import JWT_PROJECT_KEY, generate_jwt_token
 from app.services.tool.packager import process_tool
 
 router = APIRouter()
@@ -49,7 +51,7 @@ async def run_tool_test(  # noqa: PLR0915
     function_name = f"cli-{str(uuid4())}"
     lambda_client = AWSLambdaClient()
 
-    async def response_stream() -> AsyncIterator[bytes]:
+    async def response_stream() -> AsyncIterator[bytes]:  # noqa: PLR0915
         try:
             initial_data: CLIResponse = {
                 "message": "Processing test run...",
@@ -156,13 +158,20 @@ async def run_tool_test(  # noqa: PLR0915
                 for key, value in test_data.get("parameters", {}).items():
                     parameters.append({"name": key, "value": value})
 
+                project = test_data.get("project", {})
+                if isinstance(project, str):
+                    project = json.loads(project)
+
+                token = generate_jwt_token(str(data.project_uuid), settings.JWT_SECRET_KEY)
+                project[JWT_PROJECT_KEY] = token
+
                 test_event = {
                     "agent_key": data.agent_key,
                     "action_group": lambda_function.name,
                     "function": lambda_function.name,
                     "parameters": parameters,
                     "sessionAttributes": {
-                        "project": json.dumps(test_data.get("project", {})),
+                        "project": json.dumps(project),
                         "contact": json.dumps(test_data.get("contact", {})),
                         "credentials": json.dumps(test_data.get("credentials", data.tool_credentials)),
                         "globals": json.dumps(test_data.get("globals", data.tool_globals)),
