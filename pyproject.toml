@@ -45,6 +45,7 @@ line-length = 119
 target-version = "py312"
 lint.select = ["E", "F", "B", "I", "N", "UP", "PL"]
 lint.ignore = ["PLR0911"]
+lint.per-file-ignores = {"**/tests/**" = ["PLR0913"]}
 
 [tool.mypy]
 python_version = "3.12"
@@ -57,6 +58,10 @@ strict_optional = true
 warn_redundant_casts = true
 warn_return_any = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["agenteval.*"]
+ignore_missing_imports = true
 
 [tool.pytest]
 python_files = ["test_*.py"]

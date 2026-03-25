@@ -77,7 +77,11 @@ async def run_evaluation(
     async def response_stream() -> AsyncIterator[bytes]:
         work_dir = tempfile.mkdtemp(prefix="eval_")
         try:
-            bearer_token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+            bearer_token = (
+                authorization.replace("Bearer ", "")
+                if authorization.startswith("Bearer ")
+                else authorization
+            )
 
             target_config = data.target.copy()
             target_config["weni_bearer_token"] = bearer_token
