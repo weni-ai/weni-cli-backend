@@ -116,10 +116,10 @@ class TestEvaluationEndpoint:
             "app.api.v1.routers.evaluations.TargetFactory",
             return_value=mock_target_factory,
         )
-        mocker.patch(
+        mock_test_suite_cls = mocker.patch(
             "app.api.v1.routers.evaluations.TestSuite",
-            **{"load.return_value": mock_test_suite},
         )
+        mock_test_suite_cls.load.return_value = mock_test_suite
         mocker.patch(
             "app.api.v1.routers.evaluations.create_markdown_summary",
         )
@@ -202,7 +202,8 @@ class TestEvaluationEndpoint:
 
         mocker.patch("app.api.v1.routers.evaluations.EvaluatorFactory", return_value=mock_evaluator_factory)
         mocker.patch("app.api.v1.routers.evaluations.TargetFactory", return_value=mock_target_factory)
-        mocker.patch("app.api.v1.routers.evaluations.TestSuite", **{"load.return_value": mock_test_suite})
+        mock_test_suite_cls = mocker.patch("app.api.v1.routers.evaluations.TestSuite")
+        mock_test_suite_cls.load.return_value = mock_test_suite
         mocker.patch("app.api.v1.routers.evaluations.create_markdown_summary")
 
         response = client.post(api_path, json=evaluation_payload, headers=auth_headers)
