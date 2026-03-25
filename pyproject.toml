@@ -44,7 +44,7 @@ build-backend = "poetry.core.masonry.api"
 line-length = 119
 target-version = "py312"
 lint.select = ["E", "F", "B", "I", "N", "UP", "PL"]
-lint.ignore = ["PLR0911"]
+lint.ignore = ["PLR0911", "PLR0915"]
 lint.per-file-ignores = {"**/tests/**" = ["PLR0913"]}
 
 [tool.mypy]
