@@ -20,6 +20,7 @@ httpx = "^0.28.1"
 sentry-sdk = {extras = ["fastapi"], version = "^2.22.0"}
 packaging = "^24.2"
 elastic-apm = "^6.25.0"
+weni-agenteval = "^1.0.11"
 PyJWT = "^2.8.0"
 cryptography = "^42.0.0"
 
@@ -43,7 +44,8 @@ build-backend = "poetry.core.masonry.api"
 line-length = 119
 target-version = "py312"
 lint.select = ["E", "F", "B", "I", "N", "UP", "PL"]
-lint.ignore = ["PLR0911"]
+lint.ignore = ["PLR0911", "PLR0915"]
+lint.per-file-ignores = {"**/tests/**" = ["PLR0913"]}
 
 [tool.mypy]
 python_version = "3.12"
@@ -56,6 +58,10 @@ strict_optional = true
 warn_redundant_casts = true
 warn_return_any = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["agenteval.*"]
+ignore_missing_imports = true
 
 [tool.pytest]
 python_files = ["test_*.py"]
