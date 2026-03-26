@@ -11,10 +11,6 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import uuid4
 
-from agenteval.evaluators import EvaluatorFactory
-from agenteval.summary import create_markdown_summary
-from agenteval.targets import TargetFactory
-from agenteval.test import TestSuite
 from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -87,6 +83,13 @@ async def run_evaluation(
             target_config["weni_bearer_token"] = bearer_token
             target_config["weni_project_uuid"] = x_project_uuid
 
+            if "LOG_LEVEL" in os.environ:
+                os.environ["LOG_LEVEL"] = os.environ["LOG_LEVEL"].upper()
+
+            from agenteval.evaluators import EvaluatorFactory
+            from agenteval.targets import TargetFactory
+            from agenteval.test import TestSuite
+
             evaluator_factory = EvaluatorFactory(config=data.evaluator)
             target_factory = TargetFactory(config=target_config)
             test_suite = TestSuite.load(data.tests, data.filter)
@@ -156,6 +159,8 @@ async def run_evaluation(
                     "code": "EVALUATION_TEST_COMPLETED",
                 }
                 yield send_response(test_completed, request_id=request_id)
+
+            from agenteval.summary import create_markdown_summary
 
             create_markdown_summary(
                 work_dir,

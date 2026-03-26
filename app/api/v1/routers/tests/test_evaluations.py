@@ -109,19 +109,19 @@ class TestEvaluationEndpoint:
         mock_target_factory.create.return_value = mock_target
 
         mocker.patch(
-            "app.api.v1.routers.evaluations.EvaluatorFactory",
+            "agenteval.evaluators.EvaluatorFactory",
             return_value=mock_evaluator_factory,
         )
         mocker.patch(
-            "app.api.v1.routers.evaluations.TargetFactory",
+            "agenteval.targets.TargetFactory",
             return_value=mock_target_factory,
         )
         mock_test_suite_cls = mocker.patch(
-            "app.api.v1.routers.evaluations.TestSuite",
+            "agenteval.test.TestSuite",
         )
         mock_test_suite_cls.load.return_value = mock_test_suite
         mocker.patch(
-            "app.api.v1.routers.evaluations.create_markdown_summary",
+            "agenteval.summary.create_markdown_summary",
         )
 
         return {
@@ -200,11 +200,11 @@ class TestEvaluationEndpoint:
 
         mock_target_factory = MagicMock()
 
-        mocker.patch("app.api.v1.routers.evaluations.EvaluatorFactory", return_value=mock_evaluator_factory)
-        mocker.patch("app.api.v1.routers.evaluations.TargetFactory", return_value=mock_target_factory)
-        mock_test_suite_cls = mocker.patch("app.api.v1.routers.evaluations.TestSuite")
+        mocker.patch("agenteval.evaluators.EvaluatorFactory", return_value=mock_evaluator_factory)
+        mocker.patch("agenteval.targets.TargetFactory", return_value=mock_target_factory)
+        mock_test_suite_cls = mocker.patch("agenteval.test.TestSuite")
         mock_test_suite_cls.load.return_value = mock_test_suite
-        mocker.patch("app.api.v1.routers.evaluations.create_markdown_summary")
+        mocker.patch("agenteval.summary.create_markdown_summary")
 
         response = client.post(api_path, json=evaluation_payload, headers=auth_headers)
 
@@ -227,7 +227,7 @@ class TestEvaluationEndpoint:
         mock_auth_middleware: None,
     ) -> None:
         mocker.patch(
-            "app.api.v1.routers.evaluations.EvaluatorFactory",
+            "agenteval.evaluators.EvaluatorFactory",
             side_effect=ValueError("Invalid evaluator config"),
         )
 
