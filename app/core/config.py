@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     AGENT_LOG_GROUP: str = ""
     AWS_REGION_NAME: str = "us-east-1"
 
+    # Evaluation settings
+    EVALUATION_DEFAULT_MODEL: str = "claude-haiku-4_5-global"
+
     # JWT settings
     JWT_SECRET_KEY: str = ""
 

@@ -56,7 +56,7 @@ class CreateChannelRequestModel(BaseModel):
 class RunEvaluationRequestModel(BaseModel):
     """Run evaluation request model."""
 
-    evaluator: dict[str, Any]
-    target: dict[str, Any]
+    evaluator: dict[str, Any] = {}
+    target: dict[str, Any] = {}
     tests: dict[str, Any]
     filter: str | None = None

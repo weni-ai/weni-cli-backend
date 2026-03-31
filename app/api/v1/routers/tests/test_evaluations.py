@@ -39,13 +39,6 @@ def auth_headers() -> dict[str, str]:
 @pytest.fixture
 def evaluation_payload() -> dict[str, Any]:
     return {
-        "evaluator": {
-            "model": "claude-haiku-4_5-global",
-            "aws_region": "us-east-1",
-        },
-        "target": {
-            "type": "weni",
-        },
         "tests": {
             "greeting": {
                 "steps": ["Send a greeting message"],
@@ -262,8 +255,6 @@ class TestEvaluationEndpoint:
         mock_auth_middleware: None,
     ) -> None:
         payload = {
-            "evaluator": {"model": "claude-haiku-4_5-global", "aws_region": "us-east-1"},
-            "target": {"type": "weni"},
             "tests": {
                 "greeting": {
                     "steps": ["Send a greeting message"],
@@ -271,6 +262,33 @@ class TestEvaluationEndpoint:
                 }
             },
             "filter": "greeting",
+        }
+
+        response = client.post(api_path, json=payload, headers=auth_headers)
+
+        assert response.status_code == status.HTTP_200_OK
+
+        events = parse_streaming_response(response)
+        codes = [e["code"] for e in events]
+        assert "EVALUATION_STARTED" in codes
+
+    def test_evaluation_with_custom_model_override(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_headers: dict[str, str],
+        mocker: MockerFixture,
+        mock_agenteval_success: dict[str, MagicMock],
+        mock_auth_middleware: None,
+    ) -> None:
+        payload = {
+            "evaluator": {"model": "claude-3_5"},
+            "tests": {
+                "greeting": {
+                    "steps": ["Send a greeting message"],
+                    "expected_results": ["Agent responds with a greeting"],
+                }
+            },
         }
 
         response = client.post(api_path, json=payload, headers=auth_headers)
