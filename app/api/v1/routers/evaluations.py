@@ -15,6 +15,7 @@ from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.api.v1.models.requests import RunEvaluationRequestModel
+from app.core.config import settings
 from app.core.response import CLIResponse, send_response
 
 router = APIRouter()
@@ -79,7 +80,12 @@ async def run_evaluation(
                 else authorization
             )
 
+            evaluator_config = data.evaluator.copy()
+            evaluator_config.setdefault("model", settings.EVALUATION_DEFAULT_MODEL)
+            evaluator_config.setdefault("aws_region", settings.AWS_REGION_NAME)
+
             target_config = data.target.copy()
+            target_config.setdefault("type", "weni")
             target_config["weni_bearer_token"] = bearer_token
             target_config["weni_project_uuid"] = x_project_uuid
 
@@ -90,7 +96,7 @@ async def run_evaluation(
             from agenteval.targets import TargetFactory
             from agenteval.test import TestSuite
 
-            evaluator_factory = EvaluatorFactory(config=data.evaluator)
+            evaluator_factory = EvaluatorFactory(config=evaluator_config)
             target_factory = TargetFactory(config=target_config)
             test_suite = TestSuite.load(data.tests, data.filter)
 
