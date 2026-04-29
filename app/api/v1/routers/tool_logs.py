@@ -38,7 +38,8 @@ async def get_logs(
     log_group_data = log_group.json()
 
     try:
-        log_group_arn = log_group_data["log_group"]["log_group_arn"]
+        log_group_payload = log_group_data["log_group"]
+        log_group_arn = log_group_payload["log_group_arn"]
     except Exception as e:
         logger.error(f"Error getting log group ARN: {e}")
         return JSONResponse(
@@ -46,9 +47,19 @@ async def get_logs(
             content={"status": "error", "message": "Log group not found in Nexus response"},
         )
 
+    # Newer nexus responses include `lambda_name` explicitly; fall back to
+    # `tool_name`, which historically held the same value.
+    lambda_name = log_group_payload.get("lambda_name") or log_group_payload.get("tool_name")
+    if not lambda_name:
+        logger.error("Nexus log-group response missing lambda_name/tool_name")
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"status": "error", "message": "Lambda name not found in Nexus response"},
+        )
+
     logs_client = AWSLogsClient()
     logs, next_token = await logs_client.get_function_logs(
-        log_group_arn, data.start_time, data.end_time, data.pattern, data.next_token
+        log_group_arn, lambda_name, data.start_time, data.end_time, data.pattern, data.next_token
     )
 
     return JSONResponse(

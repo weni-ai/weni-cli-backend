@@ -17,7 +17,8 @@ TEST_AGENT_KEY = "test-agent"
 TEST_TOOL_KEY = "test-tool"
 TEST_PROJECT_UUID = str(uuid4())
 TEST_AUTH_TOKEN = "Bearer test-token"
-TEST_LOG_GROUP_ARN = "arn:aws:logs:us-east-1:123456789012:log-group:/aws/lambda/test-function:*"
+TEST_LOG_GROUP_ARN = "arn:aws:logs:us-east-1:123456789012:log-group:/aws/lambda/agents-central:*"
+TEST_LAMBDA_NAME = "test-tool-42"
 
 
 @pytest.fixture(scope="module")
@@ -72,7 +73,12 @@ class TestGetLogsEndpoint:
         # Mock NexusClient response
         mock_nexus_response = mocker.Mock()
         mock_nexus_response.status_code = status.HTTP_200_OK
-        mock_nexus_response.json.return_value = {"log_group": {"log_group_arn": TEST_LOG_GROUP_ARN}}
+        mock_nexus_response.json.return_value = {
+            "log_group": {
+                "log_group_arn": TEST_LOG_GROUP_ARN,
+                "lambda_name": TEST_LAMBDA_NAME,
+            }
+        }
         mock_nexus_client = mocker.patch("app.api.v1.routers.tool_logs.NexusClient").return_value
         mock_nexus_client.get_log_group.return_value = mock_nexus_response
 
@@ -99,6 +105,7 @@ class TestGetLogsEndpoint:
         mock_nexus_client.get_log_group.assert_called_once_with(TEST_AGENT_KEY, TEST_TOOL_KEY)
         mock_aws_client.get_function_logs.assert_called_once_with(
             TEST_LOG_GROUP_ARN,
+            TEST_LAMBDA_NAME,
             mocker.ANY,  # Check specific times if needed, requires parsing params
             mocker.ANY,
             None,  # default_query_params doesn't include pattern
@@ -118,7 +125,12 @@ class TestGetLogsEndpoint:
         # Mock NexusClient response (same as success case)
         mock_nexus_response = mocker.Mock()
         mock_nexus_response.status_code = status.HTTP_200_OK
-        mock_nexus_response.json.return_value = {"log_group": {"log_group_arn": TEST_LOG_GROUP_ARN}}
+        mock_nexus_response.json.return_value = {
+            "log_group": {
+                "log_group_arn": TEST_LOG_GROUP_ARN,
+                "lambda_name": TEST_LAMBDA_NAME,
+            }
+        }
         mock_nexus_client = mocker.patch("app.api.v1.routers.tool_logs.NexusClient").return_value
         mock_nexus_client.get_log_group.return_value = mock_nexus_response
 
@@ -200,6 +212,67 @@ class TestGetLogsEndpoint:
         # Verify AWS client was NOT called
         mock_aws_client.get_function_logs.assert_not_called()
 
+    def test_get_logs_falls_back_to_tool_name_when_lambda_name_missing(  # noqa: PLR0913
+        self,
+        client: TestClient,
+        api_path: str,
+        common_headers: dict[str, str],
+        default_query_params: dict[str, Any],
+        mocker: MockerFixture,
+        mock_auth_middleware: None,
+    ) -> None:
+        """Backward-compat: older nexus only returns `tool_name`, which equals the lambda name."""
+        mock_nexus_response = mocker.Mock()
+        mock_nexus_response.status_code = status.HTTP_200_OK
+        mock_nexus_response.json.return_value = {
+            "log_group": {
+                "log_group_arn": TEST_LOG_GROUP_ARN,
+                "tool_name": TEST_LAMBDA_NAME,
+            }
+        }
+        mock_nexus_client = mocker.patch("app.api.v1.routers.tool_logs.NexusClient").return_value
+        mock_nexus_client.get_log_group.return_value = mock_nexus_response
+
+        mock_aws_client = mocker.patch("app.api.v1.routers.tool_logs.AWSLogsClient").return_value
+        mock_aws_client.get_function_logs = mocker.AsyncMock(return_value=([], None))
+
+        response = client.get(api_path, params=default_query_params, headers=common_headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_aws_client.get_function_logs.assert_called_once_with(
+            TEST_LOG_GROUP_ARN,
+            TEST_LAMBDA_NAME,
+            mocker.ANY,
+            mocker.ANY,
+            None,
+            None,
+        )
+
+    def test_get_logs_nexus_response_missing_lambda_name(  # noqa: PLR0913
+        self,
+        client: TestClient,
+        api_path: str,
+        common_headers: dict[str, str],
+        default_query_params: dict[str, Any],
+        mocker: MockerFixture,
+        mock_auth_middleware: None,
+    ) -> None:
+        """Fail closed when neither `lambda_name` nor `tool_name` is provided."""
+        mock_nexus_response = mocker.Mock()
+        mock_nexus_response.status_code = status.HTTP_200_OK
+        mock_nexus_response.json.return_value = {
+            "log_group": {"log_group_arn": TEST_LOG_GROUP_ARN}
+        }
+        mock_nexus_client = mocker.patch("app.api.v1.routers.tool_logs.NexusClient").return_value
+        mock_nexus_client.get_log_group.return_value = mock_nexus_response
+
+        mock_aws_client = mocker.patch("app.api.v1.routers.tool_logs.AWSLogsClient").return_value
+
+        response = client.get(api_path, params=default_query_params, headers=common_headers)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert "Lambda name not found" in response.json()["message"]
+        mock_aws_client.get_function_logs.assert_not_called()
 
     def test_get_logs_aws_client_raises_exception(  # noqa: PLR0913
         self,
@@ -214,7 +287,12 @@ class TestGetLogsEndpoint:
         # Mock NexusClient response (success)
         mock_nexus_response = mocker.Mock()
         mock_nexus_response.status_code = status.HTTP_200_OK
-        mock_nexus_response.json.return_value = {"log_group": {"log_group_arn": TEST_LOG_GROUP_ARN}}
+        mock_nexus_response.json.return_value = {
+            "log_group": {
+                "log_group_arn": TEST_LOG_GROUP_ARN,
+                "lambda_name": TEST_LAMBDA_NAME,
+            }
+        }
         mock_nexus_client = mocker.patch("app.api.v1.routers.tool_logs.NexusClient").return_value
         mock_nexus_client.get_log_group.return_value = mock_nexus_response
 
@@ -243,7 +321,12 @@ class TestGetLogsEndpoint:
         # Mock NexusClient response
         mock_nexus_response = mocker.Mock()
         mock_nexus_response.status_code = status.HTTP_200_OK
-        mock_nexus_response.json.return_value = {"log_group": {"log_group_arn": TEST_LOG_GROUP_ARN}}
+        mock_nexus_response.json.return_value = {
+            "log_group": {
+                "log_group_arn": TEST_LOG_GROUP_ARN,
+                "lambda_name": TEST_LAMBDA_NAME,
+            }
+        }
         mock_nexus_client = mocker.patch("app.api.v1.routers.tool_logs.NexusClient").return_value
         mock_nexus_client.get_log_group.return_value = mock_nexus_response
 
@@ -275,8 +358,9 @@ class TestGetLogsEndpoint:
         # Verify mocks were called with pattern and token
         mock_aws_client.get_function_logs.assert_called_once_with(
             TEST_LOG_GROUP_ARN,
+            TEST_LAMBDA_NAME,
             mocker.ANY,
             mocker.ANY,
-            test_pattern, # Check pattern was passed
-            test_token,   # Check token was passed
+            test_pattern,  # Check pattern was passed
+            test_token,    # Check token was passed
         )

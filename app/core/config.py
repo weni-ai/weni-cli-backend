@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     AGENT_LOG_GROUP: str = ""
     AWS_REGION_NAME: str = "us-east-1"
 
+    # CloudWatch Logs Insights polling (used when reading logs from
+    # the centralized log group via StartQuery / GetQueryResults)
+    AWS_LOGS_INSIGHTS_POLL_INTERVAL_SECONDS: float = 0.5
+    AWS_LOGS_INSIGHTS_MAX_WAIT_SECONDS: float = 30.0
+    AWS_LOGS_INSIGHTS_PAGE_LIMIT: int = 1000
+
     # Evaluation settings
     EVALUATION_DEFAULT_MODEL: str = "claude-haiku-4_5-global"
 
