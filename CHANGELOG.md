@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - active runs reuse `ActiveAgentProcessor` to build the Lambda zip and stream results in the same NDJSON contract as the passive flow
   - active `test_event` now mirrors the active Lambda template (`payload`, `params`, `credentials`, `project`, `project_rules`, `ignored_official_rules`, `global_rule`); JWT is injected into `project.auth_token`
 
+## [1.13.0] - 2026-05-13
+- fix: return contact_urn on active lambda failures
+
+## [1.12.0] - 2026-03-31
+- feat: improve agent evaluation file definition
+
 ## [1.11.1] - 2026-03-31
 - feat: improve agent evaluation file definition
 
