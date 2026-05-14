@@ -318,3 +318,80 @@ class TestEvaluationEndpoint:
             assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS
         finally:
             _rate_limiter.release(project_uuid)
+
+    def _patch_agenteval_for_target_config(self, mocker: MockerFixture) -> MagicMock:
+        """Patch the agenteval imports and return the TargetFactory class mock for inspection."""
+        mock_test = _make_mock_test()
+        mock_result = _make_mock_result(passed=True)
+        mock_test_suite = _make_mock_test_suite(mock_test)
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.run.return_value = mock_result
+        mock_evaluator_factory = MagicMock()
+        mock_evaluator_factory.create.return_value = mock_evaluator
+        mock_target_factory = MagicMock()
+
+        mocker.patch(
+            "agenteval.evaluators.EvaluatorFactory",
+            return_value=mock_evaluator_factory,
+        )
+        target_factory_cls = mocker.patch(
+            "agenteval.targets.TargetFactory",
+            return_value=mock_target_factory,
+        )
+        mock_test_suite_cls = mocker.patch("agenteval.test.TestSuite")
+        mock_test_suite_cls.load.return_value = mock_test_suite
+        mocker.patch("agenteval.summary.create_markdown_summary")
+
+        return target_factory_cls
+
+    def test_evaluation_injects_default_target_ws_params(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_headers: dict[str, str],
+        evaluation_payload: dict[str, Any],
+        mocker: MockerFixture,
+        mock_auth_middleware: None,
+    ) -> None:
+        """The backend must inject WeniTarget WS params with the configured defaults."""
+        target_factory_cls = self._patch_agenteval_for_target_config(mocker)
+
+        response = client.post(api_path, json=evaluation_payload, headers=auth_headers)
+        assert response.status_code == status.HTTP_200_OK
+
+        target_factory_cls.assert_called_once()
+        config = target_factory_cls.call_args.kwargs["config"]
+        assert config["connect_ws_first"] is settings.EVALUATION_TARGET_CONNECT_WS_FIRST
+        assert config["accumulate_messages_window"] == settings.EVALUATION_TARGET_ACCUMULATE_MESSAGES_WINDOW
+
+    def test_evaluation_target_ws_params_can_be_overridden(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_headers: dict[str, str],
+        mocker: MockerFixture,
+        mock_auth_middleware: None,
+    ) -> None:
+        """Client-provided target values must override the backend defaults."""
+        target_factory_cls = self._patch_agenteval_for_target_config(mocker)
+
+        payload = {
+            "target": {
+                "connect_ws_first": False,
+                "accumulate_messages_window": 0.5,
+            },
+            "tests": {
+                "greeting": {
+                    "steps": ["Send a greeting message"],
+                    "expected_results": ["Agent responds with a greeting"],
+                }
+            },
+        }
+
+        response = client.post(api_path, json=payload, headers=auth_headers)
+        assert response.status_code == status.HTTP_200_OK
+
+        config = target_factory_cls.call_args.kwargs["config"]
+        assert config["connect_ws_first"] is False
+        assert config["accumulate_messages_window"] == 0.5

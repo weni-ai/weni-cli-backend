@@ -56,6 +56,13 @@ class Settings(BaseSettings):
 
     # Evaluation settings
     EVALUATION_DEFAULT_MODEL: str = "claude-haiku-4_5-global"
+    # Open the WebSocket before sending the prompt to the agent. Closes the race window
+    # where early broadcasts could be missed by the WeniTarget listener.
+    EVALUATION_TARGET_CONNECT_WS_FIRST: bool = True
+    # Collect every broadcast received during a turn and wait this many seconds without
+    # a new message before returning the concatenated response. Required for agents that
+    # emit multiple messages per turn (e.g. text + catalog). 0 disables accumulation.
+    EVALUATION_TARGET_ACCUMULATE_MESSAGES_WINDOW: float = 2.0
 
     # JWT settings
     JWT_SECRET_KEY: str = ""
