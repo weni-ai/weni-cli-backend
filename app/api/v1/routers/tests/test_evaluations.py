@@ -15,6 +15,7 @@ from app.main import app
 
 TEST_TOKEN = "Bearer test-token"
 TEST_PROJECT_UUID = str(uuid4())
+CUSTOM_ACCUMULATE_MESSAGES_WINDOW = 0.5
 
 
 @pytest.fixture(scope="module")
@@ -379,7 +380,7 @@ class TestEvaluationEndpoint:
         payload = {
             "target": {
                 "connect_ws_first": False,
-                "accumulate_messages_window": 0.5,
+                "accumulate_messages_window": CUSTOM_ACCUMULATE_MESSAGES_WINDOW,
             },
             "tests": {
                 "greeting": {
@@ -394,4 +395,4 @@ class TestEvaluationEndpoint:
 
         config = target_factory_cls.call_args.kwargs["config"]
         assert config["connect_ws_first"] is False
-        assert config["accumulate_messages_window"] == 0.5
+        assert config["accumulate_messages_window"] == CUSTOM_ACCUMULATE_MESSAGES_WINDOW
