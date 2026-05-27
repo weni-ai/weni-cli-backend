@@ -182,7 +182,7 @@ class TestRunToolEndpoint:
         }
 
         mocker.patch(
-            "app.api.v1.routers.runs.process_tool",
+            "app.services.runs.tool_strategy.process_tool",
             new=AsyncMock(return_value=(mock_process_result, io.BytesIO(TEST_CONTENT))),
         )
 
@@ -191,16 +191,18 @@ class TestRunToolEndpoint:
         wait_for_function_active_mock = AsyncMock(return_value=True)
         mock_lambda_client.wait_for_function_active = wait_for_function_active_mock
         mock_lambda_client.create_function = mocker.MagicMock(
-            return_value={
-                "FunctionName": TEST_FUNCTION_NAME,
-                "FunctionArn": TEST_FUNCTION_ARN,
-            }
+            return_value=LambdaFunction(
+                arn=TEST_FUNCTION_ARN,
+                name=TEST_FUNCTION_NAME,
+                log_group="test-log-group",
+            )
         )
         mock_lambda_client.invoke_function = mocker.MagicMock(
-            return_value={
-                "StatusCode": 200,
-                "Payload": '{"result": "success", "output": "Test output"}',
-            }
+            return_value=(
+                {"response": {"result": "success"}, "status_code": 200, "logs": ""},
+                TEST_START_TIME,
+                TEST_END_TIME,
+            )
         )
         mock_lambda_client.delete_function = mocker.MagicMock(return_value=None)
         mocker.patch("app.api.v1.routers.runs.AWSLambdaClient", return_value=mock_lambda_client)
@@ -308,7 +310,10 @@ class TestRunToolEndpoint:
         """Test error handling when process_tool raises an exception."""
         # Setup
         error_message = "Error processing tool"
-        mocker.patch("app.api.v1.routers.runs.process_tool", new=AsyncMock(side_effect=ValueError(error_message)))
+        mocker.patch(
+            "app.services.runs.tool_strategy.process_tool",
+            new=AsyncMock(side_effect=ValueError(error_message)),
+        )
 
         # Mock AWS clients
         mock_lambda_client = mocker.MagicMock()
@@ -350,7 +355,7 @@ class TestRunToolEndpoint:
             "code": "TOOL_PROCESSED",
         }
         mocker.patch(
-            "app.api.v1.routers.runs.process_tool",
+            "app.services.runs.tool_strategy.process_tool",
             new=AsyncMock(return_value=(mock_process_result, io.BytesIO(TEST_CONTENT))),
         )
 
@@ -394,7 +399,7 @@ class TestRunToolEndpoint:
             "code": "TOOL_PROCESSED",
         }
         mocker.patch(
-            "app.api.v1.routers.runs.process_tool",
+            "app.services.runs.tool_strategy.process_tool",
             new=AsyncMock(return_value=(mock_process_result, io.BytesIO(TEST_CONTENT))),
         )
 
@@ -444,7 +449,7 @@ class TestRunToolEndpoint:
             "code": "TOOL_PROCESSED",
         }
         mocker.patch(
-            "app.api.v1.routers.runs.process_tool",
+            "app.services.runs.tool_strategy.process_tool",
             new=AsyncMock(return_value=(mock_process_result, io.BytesIO(TEST_CONTENT))),
         )
 
@@ -488,7 +493,7 @@ class TestRunToolEndpoint:
     ) -> None:
         """Test that resources are cleaned up when an error occurs."""
         mocker.patch(
-            "app.api.v1.routers.runs.process_tool", new=AsyncMock(side_effect=ValueError("Process tool error"))
+            "app.services.runs.tool_strategy.process_tool", new=AsyncMock(side_effect=ValueError("Process tool error"))
         )
 
         # When the Lambda client is created early in the code, make lambda_function_name available
@@ -651,7 +656,7 @@ class TestRunToolEndpoint:
             "code": "TOOL_PROCESSED",
         }
         mocker.patch(
-            "app.api.v1.routers.runs.process_tool",
+            "app.services.runs.tool_strategy.process_tool",
             new=AsyncMock(return_value=(mock_process_result, io.BytesIO(TEST_CONTENT))),
         )
 
@@ -678,7 +683,7 @@ class TestRunToolEndpoint:
 
         # Mock generate_jwt_token to return a predictable token
         mocker.patch(
-            "app.api.v1.routers.runs.generate_jwt_token",
+            "app.services.runs.tool_strategy.generate_jwt_token",
             return_value="mocked-jwt-token",
         )
 
@@ -712,7 +717,7 @@ class TestRunToolEndpoint:
             "code": "TOOL_PROCESSED",
         }
         mocker.patch(
-            "app.api.v1.routers.runs.process_tool",
+            "app.services.runs.tool_strategy.process_tool",
             new=AsyncMock(
                 return_value=(mock_process_result, None)  # Return None for tool_zip_bytes
             ),
@@ -739,3 +744,277 @@ class TestRunToolEndpoint:
         error_responses = [r for r in response_data if r.get("success") is False]
         assert len(error_responses) > 0
         assert "Failed to process tool" in str(error_responses[-1])
+
+
+# Common constants for active agent tests
+TEST_ACTIVE_AGENT_KEY = "payment_agent_pix_recovery"
+TEST_RULE_KEY = "PaymentRecovery"
+
+
+@pytest.fixture
+def active_agent_definition() -> dict[str, Any]:
+    """Return a minimal valid active agent definition."""
+    return {
+        "agents": {
+            TEST_ACTIVE_AGENT_KEY: {
+                "name": "Whatsapp Payment Recovery",
+                "description": "Recovers incomplete PIX orders",
+                "language": "pt_BR",
+                "rules": {
+                    TEST_RULE_KEY: {
+                        "display_name": "Payment Recovery",
+                        "template": "payment_recovery",
+                        "start_condition": "incomplete order without PIX",
+                        "source": {
+                            "entrypoint": "main.PaymentRecovery",
+                            "path": "rules/payment_recovery",
+                        },
+                        "example": {"input": {}, "output": {}},
+                    },
+                },
+                "pre_processing": {
+                    "source": {
+                        "entrypoint": "processing.PreProcessor",
+                        "path": "pre_processors/processor",
+                    },
+                    "result_examples_file": "result_example.json",
+                },
+            },
+        },
+    }
+
+
+@pytest.fixture
+def run_active_request_data(active_agent_definition: dict[str, Any]) -> dict[str, Any]:
+    """Return form data for an active agent run request."""
+    test_definition = {
+        "tests": {
+            "pix_pending": {
+                "payload": {"OrderId": "1621590779140-01", "State": "payment-pending"},
+                "params": {},
+                "credentials": {},
+                "project": {
+                    "uuid": "6f8d2b1e-4a3c-4f5e-9b8d-1234567890ab",
+                    "vtex_account": "minhaloja",
+                    "country_phone_code": "55",
+                },
+            },
+        }
+    }
+
+    return {
+        "project_uuid": str(uuid4()),
+        "definition": json.dumps(active_agent_definition),
+        "test_definition": json.dumps(test_definition),
+        "agent_key": TEST_ACTIVE_AGENT_KEY,
+        "type": "active",
+        "toolkit_version": "1.0.0",
+    }
+
+
+@pytest.fixture
+def post_active_run_request_factory(
+    client: TestClient,
+    api_path: str,
+    auth_header: dict[str, str],
+    run_active_request_data: dict[str, Any],
+) -> Callable[..., Any]:
+    """Return a factory function for POSTing active agent run requests."""
+
+    def make_post_request(extra_files: dict[str, Any] | None = None) -> Any:
+        files = {
+            f"{TEST_ACTIVE_AGENT_KEY}:preprocessor_folder": (
+                "preprocessor.zip",
+                io.BytesIO(TEST_CONTENT),
+                "application/zip",
+            ),
+            f"{TEST_ACTIVE_AGENT_KEY}:{TEST_RULE_KEY}": (
+                "rule.zip",
+                io.BytesIO(TEST_CONTENT),
+                "application/zip",
+            ),
+        }
+        if extra_files:
+            files.update(extra_files)
+
+        headers = {**auth_header, "X-CLI-Version": settings.CLI_MINIMUM_VERSION}
+        return client.post(api_path, data=run_active_request_data, files=files, headers=headers)
+
+    return make_post_request
+
+
+class TestRunActiveAgentEndpoint:
+    """Tests for the active agent run flow."""
+
+    @pytest.fixture
+    def mock_active_success_dependencies(self, mocker: MockerFixture) -> None:
+        """Mock dependencies for a successful active agent run."""
+        mock_processor = mocker.MagicMock()
+        mock_processor.process = mocker.MagicMock(return_value=io.BytesIO(b"fake-active-zip-bytes"))
+        mocker.patch(
+            "app.services.runs.active_strategy.ActiveAgentProcessor",
+            return_value=mock_processor,
+        )
+
+        mock_lambda_client = mocker.MagicMock()
+        mock_lambda_client.wait_for_function_active = AsyncMock(return_value=True)
+        mock_lambda_client.create_function = mocker.MagicMock(
+            return_value=LambdaFunction(
+                arn=TEST_FUNCTION_ARN,
+                name=TEST_FUNCTION_NAME,
+                log_group="test-log-group",
+            )
+        )
+        mock_lambda_client.invoke_function = mocker.MagicMock(
+            return_value=(
+                {
+                    "response": {
+                        "status": 0,
+                        "template": "payment_recovery",
+                        "template_variables": {"1": "Maria"},
+                        "contact_urn": "whatsapp:5511999999999",
+                        "error": {},
+                        "traces": {"preprocessor": {}, "project_rule": {}, "official_rule": {}},
+                    },
+                    "status_code": 200,
+                    "logs": "",
+                },
+                TEST_START_TIME,
+                TEST_END_TIME,
+            )
+        )
+        mock_lambda_client.delete_function = mocker.MagicMock(return_value=None)
+        mocker.patch("app.api.v1.routers.runs.AWSLambdaClient", return_value=mock_lambda_client)
+
+        mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
+
+        mocker.patch(
+            "app.services.runs.active_strategy.generate_jwt_token",
+            return_value="mocked-jwt-token",
+        )
+
+    def test_active_run_success(
+        self,
+        post_active_run_request_factory: Callable[..., Any],
+        mock_active_success_dependencies: None,
+        mock_auth_middleware: None,
+    ) -> None:
+        """Active agent run produces full progression of status codes and a TEST_CASE_COMPLETED."""
+        response = post_active_run_request_factory()
+
+        assert response.status_code == status.HTTP_200_OK
+
+        response_data = parse_streaming_response(response)
+
+        codes = [r.get("code") for r in response_data]
+        assert "PROCESSING_STARTED" in codes
+        assert "ACTIVE_AGENT_PROCESSED" in codes
+        assert "LAMBDA_FUNCTION_CREATING" in codes
+        assert "STARTING_TEST_CASES" in codes
+        assert "TEST_CASE_RUNNING" in codes
+        assert "TEST_CASE_COMPLETED" in codes
+
+        completed = next(r for r in response_data if r.get("code") == "TEST_CASE_COMPLETED")
+        assert completed["data"]["test_case"] == "pix_pending"
+        assert completed["data"]["test_status_code"] == status.HTTP_200_OK
+        assert completed["data"]["test_response"]["template"] == "payment_recovery"
+
+    def test_active_run_jwt_injected_in_project(
+        self,
+        post_active_run_request_factory: Callable[..., Any],
+        mock_active_success_dependencies: None,
+        mock_auth_middleware: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """JWT token must be injected into project.auth_token for the active flow."""
+        response = post_active_run_request_factory()
+        assert response.status_code == status.HTTP_200_OK
+
+        from app.api.v1.routers import runs as runs_module
+
+        invoke_calls = runs_module.AWSLambdaClient.return_value.invoke_function.call_args_list  # type: ignore
+        assert len(invoke_calls) > 0
+
+        for call in invoke_calls:
+            test_event = call[0][1]
+            assert "auth_token" in test_event["project"]
+            assert test_event["project"]["auth_token"] == "mocked-jwt-token"
+            assert "payload" in test_event
+            assert "params" in test_event
+            assert "credentials" in test_event
+            assert "project_rules" in test_event
+            assert "ignored_official_rules" in test_event
+            assert "global_rule" in test_event
+
+    def test_active_run_missing_resources(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_active_request_data: dict[str, Any],
+        mock_auth_middleware: None,
+    ) -> None:
+        """Active run with no multipart resources should return 400."""
+        headers = {**auth_header, "X-CLI-Version": settings.CLI_MINIMUM_VERSION}
+        response = client.post(api_path, data=run_active_request_data, headers=headers)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_active_run_missing_preprocessor(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_active_request_data: dict[str, Any],
+        mock_auth_middleware: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """Sending only a rule (no preprocessor) should surface an error in the stream."""
+        mock_lambda_client = mocker.MagicMock()
+        mock_lambda_client.delete_function = mocker.MagicMock(return_value=None)
+        mocker.patch("app.api.v1.routers.runs.AWSLambdaClient", return_value=mock_lambda_client)
+        mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
+
+        files = {
+            f"{TEST_ACTIVE_AGENT_KEY}:{TEST_RULE_KEY}": (
+                "rule.zip",
+                io.BytesIO(TEST_CONTENT),
+                "application/zip",
+            ),
+        }
+        headers = {**auth_header, "X-CLI-Version": settings.CLI_MINIMUM_VERSION}
+        response = client.post(api_path, data=run_active_request_data, files=files, headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+
+        response_data = parse_streaming_response(response)
+        error_responses = [r for r in response_data if r.get("success") is False]
+        assert len(error_responses) > 0
+        assert "Preprocessor" in str(error_responses[-1])
+
+    def test_active_run_processor_error(
+        self,
+        post_active_run_request_factory: Callable[..., Any],
+        mocker: MockerFixture,
+        mock_auth_middleware: None,
+    ) -> None:
+        """If ActiveAgentProcessor raises, the lambda must be cleaned up."""
+        mocker.patch(
+            "app.services.runs.active_strategy.ActiveAgentProcessor",
+            side_effect=ValueError("Processor failed"),
+        )
+
+        mock_lambda_client = mocker.MagicMock()
+        mock_lambda_client.delete_function = mocker.MagicMock(return_value=None)
+        mocker.patch("app.api.v1.routers.runs.AWSLambdaClient", return_value=mock_lambda_client)
+        mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
+
+        response = post_active_run_request_factory()
+
+        assert response.status_code == status.HTTP_200_OK
+
+        response_data = parse_streaming_response(response)
+        error_responses = [r for r in response_data if r.get("success") is False]
+        assert len(error_responses) > 0
+        assert "Processor failed" in str(error_responses[-1])
+
+        mock_lambda_client.delete_function.assert_called_once()

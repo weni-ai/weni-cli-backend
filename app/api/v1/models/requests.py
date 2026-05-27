@@ -19,14 +19,19 @@ class ConfigureAgentsRequestModel(BaseRequestModel):
     type: Literal["active", "passive"]
 
 
-class RunToolRequestModel(BaseRequestModel):
-    """Run tool request model."""
+class RunRequestModel(BaseRequestModel):
+    """Run request model — supports both passive (tool) and active (preprocessor + rules) agents."""
 
     test_definition: Json
-    tool_key: str
     agent_key: str
-    tool_credentials: Json
-    tool_globals: Json
+    type: Literal["active", "passive"] = "passive"
+    tool_key: str | None = None
+    tool_credentials: Json | None = None
+    tool_globals: Json | None = None
+
+
+# Backward-compatible alias for tests/imports referencing the old name
+RunToolRequestModel = RunRequestModel
 
 
 class VerifyPermissionRequestModel(BaseModel):
