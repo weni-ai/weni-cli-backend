@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.14.0] - 2026-05-27
 - feat: extend `weni run` to support active agents (PreProcessor + Rules)
-  - new `RunRequestModel` with `type` discriminator (`active` | `passive`)
-  - introduce Strategy pattern in `app/services/runs/` with `tool_strategy` (passive) and `active_strategy` (active)
-  - active runs reuse `ActiveAgentProcessor` to build the Lambda zip and stream results in the same NDJSON contract as the passive flow
-  - active `test_event` now mirrors the active Lambda template (`payload`, `params`, `credentials`, `project`, `project_rules`, `ignored_official_rules`, `global_rule`); JWT is injected into `project.auth_token`
 
 ## [1.13.1] - 2026-05-20
 - fix: fix race condition in evaluation web socket
