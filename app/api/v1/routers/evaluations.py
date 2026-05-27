@@ -86,6 +86,13 @@ async def run_evaluation(
 
             target_config = data.target.copy()
             target_config.setdefault("type", "weni")
+            target_config.setdefault(
+                "connect_ws_first", settings.EVALUATION_TARGET_CONNECT_WS_FIRST
+            )
+            target_config.setdefault(
+                "accumulate_messages_window",
+                settings.EVALUATION_TARGET_ACCUMULATE_MESSAGES_WINDOW,
+            )
             target_config["weni_bearer_token"] = bearer_token
             target_config["weni_project_uuid"] = x_project_uuid
 
