@@ -72,7 +72,6 @@ def create_tool_zip(  # noqa: PLR0913, PLR0915
         # Install toolkit in package directory
         default_packages = [
             Package("weni-agents-toolkit", toolkit_version),
-            Package("sentry-sdk", "2.24.1"),
         ]
 
         packager = Packager(package_dir)

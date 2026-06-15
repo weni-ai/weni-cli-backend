@@ -1,12 +1,3 @@
-import sentry_sdk
-from sentry_sdk.integrations.aws_lambda import AwsLambdaIntegration
-
-sentry_sdk.init(
-    dsn="{sentry_dsn}",
-    integrations=[AwsLambdaIntegration()],
-    traces_sample_rate=1.0,
-)
-
 def load_value(data):
     value = {}
 
@@ -48,12 +39,8 @@ def lambda_handler(event, context):
         project=project
     )
 
-    try:
-        # new behavior: always unpack four values
-        result, format, events, traces = {class_name}(context)
-    except Exception as error:
-        sentry_sdk.capture_exception(error)
-        raise error
+    # new behavior: always unpack four values
+    result, format, events, traces = {class_name}(context)
 
     responseBody = {
         "TEXT": {

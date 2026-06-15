@@ -69,7 +69,6 @@ class Settings(BaseSettings):
 
     # Sentry settings
     SENTRY_DSN: str = ""
-    FUNCTION_SENTRY_DSN: str = ""
 
     # Elastic APM settings
     ELASTIC_APM_SERVICE_NAME: str = "weni-cli-backend"

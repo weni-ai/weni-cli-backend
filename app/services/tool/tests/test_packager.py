@@ -219,7 +219,7 @@ class TestBuildLambdaFunctionFile:
         assert "'events'" in result
         assert "'traces'" in result
         assert "dummy_function_response = {'response': action_response, 'messageVersion': '1.0'}" in result
-        assert "sentry_sdk.init(" in result
+        assert "sentry_sdk" not in result
 
     def test_template_substitution(self, packager: Packager) -> None:
         """Test template variable substitution with different values."""

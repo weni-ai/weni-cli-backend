@@ -1,13 +1,3 @@
-import sentry_sdk
-from sentry_sdk.integrations.aws_lambda import AwsLambdaIntegration
-
-sentry_sdk.init(
-    dsn="{sentry_dsn}",
-    integrations=[AwsLambdaIntegration()],
-    traces_sample_rate=1.0,
-)
-
-
 import json
 
 from enum import Enum
@@ -119,7 +109,6 @@ def lambda_handler(event, context):
     try:
         preprocess_result, preprocessor_traces = {preprocessor_class}(context)
     except Exception as error:
-        sentry_sdk.capture_exception(error)
         return LambdaResponse(
             status=ResponseStatus.PREPROCESSING_FAILED,
             template=None,
@@ -142,7 +131,6 @@ def lambda_handler(event, context):
                     traces={"preprocessor": preprocessor_traces},
                 ).to_dict()
     except Exception as error:
-        sentry_sdk.capture_exception(error)
         return LambdaResponse(
             status=ResponseStatus.GLOBAL_RULE_FAILED,
             template=None,
@@ -160,7 +148,6 @@ def lambda_handler(event, context):
     
         template, template_variables, project_rule_traces = select_template_project_rules(preprocess_result, project_rules)
     except Exception as error:
-        sentry_sdk.capture_exception(error)
         return LambdaResponse(
             status=ResponseStatus.CUSTOM_RULE_FAILED,
             template=None,
@@ -183,7 +170,6 @@ def lambda_handler(event, context):
                 ignored_official_rules_keys
             )
     except Exception as error:
-        sentry_sdk.capture_exception(error)
         return LambdaResponse(
             status=ResponseStatus.OFFICIAL_RULE_FAILED,
             template=None,
