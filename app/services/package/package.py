@@ -3,6 +3,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.core.config import settings
+
 # Constants
 SUBPROCESS_TIMEOUT_SECONDS = 120
 logger = logging.getLogger(__name__)
@@ -112,6 +114,8 @@ class Packager:
         # Un-escape the placeholders we want to replace
         for key in replacements.keys():
             template_content = template_content.replace("{{" + f"{key}" + "}}", "{" + f"{key}" + "}")
+
+        template_content = template_content.replace("{{sentry_dsn}}", settings.FUNCTION_SENTRY_DSN)
 
         # Replace placeholders in the template
         args = {key: value for key, value in replacements.items()}

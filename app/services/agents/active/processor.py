@@ -35,9 +35,10 @@ class ActiveAgentProcessor:
             package_dir = temp_path / "package"
             package_dir.mkdir(exist_ok=True)
 
-            # Install toolkit in package directory
+            # Install toolkit and sentry in package directory
             default_packages = [
                 Package("weni-agents-toolkit", self.toolkit_version),
+                Package("sentry-sdk", "2.24.1"),
             ]
 
             packager = Packager(package_dir)
