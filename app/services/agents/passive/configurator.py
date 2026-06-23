@@ -14,11 +14,6 @@ logger = logging.getLogger(__name__)
 
 
 class PassiveAgentConfigurator(AgentConfigurator):
-    def __init__(
-        self, project_uuid: str, definition: dict[str, Any], toolkit_version: str, request_id: str, authorization: str
-    ):
-        super().__init__(project_uuid, definition, toolkit_version, request_id, authorization)
-
     def configure_agents(
         self,
         agent_resources_entries: list[tuple[str, bytes]],
@@ -149,7 +144,12 @@ class PassiveAgentConfigurator(AgentConfigurator):
             Tuple of (success, response)
         """
         try:
-            logger.info(f"Sending {len(tool_mapping)} processed tools to Nexus for project {self.project_uuid}")
+            logger.info(
+                "Sending %s processed tools to Nexus for project %s (apm_instrumentation=%s)",
+                len(tool_mapping),
+                self.project_uuid,
+                self.apm_instrumentation,
+            )
             nexus_client = NexusClient(self.authorization, self.project_uuid)
 
             # We need to change the entrypoint to the lambda function we've created
@@ -157,7 +157,7 @@ class PassiveAgentConfigurator(AgentConfigurator):
                 for tool in agent_data["tools"]:
                     tool["source"]["entrypoint"] = "lambda_function.lambda_handler"
 
-            response = nexus_client.push_agents(self.definition, tool_mapping)
+            response = nexus_client.push_agents(self.definition, tool_mapping, self.apm_instrumentation)
 
             if response.status_code != status.HTTP_200_OK:
                 raise Exception(f"Failed to push agents: {response.status_code} {response.text}")

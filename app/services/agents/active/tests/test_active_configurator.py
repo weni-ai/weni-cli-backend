@@ -14,6 +14,7 @@ from app.services.agents.active.configurator import (
     ActiveAgentConfigurator,
 )
 from app.services.agents.active.models import ActiveAgentResourceModel, Resource, RuleResource
+from app.services.agents.configurators import AgentConfiguratorContext
 
 EXPECTED_SEND_RESPONSE_CALLS_SUCCESS = 2
 
@@ -75,7 +76,15 @@ def configurator(
     toolkit_version = "1.0.0"
     request_id = "test-request-id"
     authorization = "test-auth_token"
-    return ActiveAgentConfigurator(project_uuid, definition, toolkit_version, request_id, authorization)
+    return ActiveAgentConfigurator(
+        AgentConfiguratorContext(
+            project_uuid=project_uuid,
+            definition=definition,
+            toolkit_version=toolkit_version,
+            request_id=request_id,
+            authorization=authorization,
+        )
+    )
 
 
 @pytest.mark.asyncio
