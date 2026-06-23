@@ -115,6 +115,26 @@ class TestNexusClient:
         # Verify files were present in the request
         assert "tool-test-tool" in last_request.text
 
+    def test_push_agents_with_apm_instrumentation(
+        self,
+        requests_mock: requests_mock.Mocker,
+        nexus_client: NexusClient,
+        project_uuid: str,
+        agents_definition: dict,
+        tool_files: dict,
+    ) -> None:
+        """Test the push_agents method with APM instrumentation."""
+        expected_url = f"{settings.NEXUS_BASE_URL}/api/agents/push"
+        requests_mock.post(expected_url, json={"success": True}, status_code=status.HTTP_200_OK)
+
+        response = nexus_client.push_agents(agents_definition, tool_files, "enabled")
+
+        assert response.status_code == status.HTTP_200_OK
+        last_request = requests_mock.last_request
+        assert last_request is not None
+        assert "apm_instrumentation" in last_request.text
+        assert "enabled" in last_request.text
+
     def test_push_agents_error_response(  # noqa: PLR0913
         self,
         requests_mock: requests_mock.Mocker,

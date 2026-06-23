@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from pytest_mock import MockerFixture
 
 from app.core.response import CLIResponse
+from app.services.agents.configurators import AgentConfiguratorContext
 from app.services.agents.passive.configurator import PassiveAgentConfigurator
 
 NEXUS_UPLOAD_ERROR_PROGRESS = 0.9
@@ -76,7 +77,15 @@ def configurator(
     toolkit_version = "1.0.0"
     request_id = "test-request-id"
     authorization = "test-auth_token"
-    return PassiveAgentConfigurator(project_uuid, definition, toolkit_version, request_id, authorization)
+    return PassiveAgentConfigurator(
+        AgentConfiguratorContext(
+            project_uuid=project_uuid,
+            definition=definition,
+            toolkit_version=toolkit_version,
+            request_id=request_id,
+            authorization=authorization,
+        )
+    )
 
 
 # --- Test Cases for configure_agents ---
@@ -172,7 +181,7 @@ async def test_configure_agents_success(
     expected_definition = configurator.definition.copy()
     expected_definition["agents"]["agent1"]["tools"][0]["source"]["entrypoint"] = "lambda_function.lambda_handler"
     mock_nexus_client.return_value.push_agents.assert_called_once_with(
-       expected_definition, expected_tool_mapping
+       expected_definition, expected_tool_mapping, None
     )
 
     # Verify final message
@@ -376,7 +385,7 @@ async def test_configure_agents_empty_input(
         expected_definition["agents"]["agent1"]["tools"][0]["source"]["entrypoint"] = "lambda_function.lambda_handler"
 
     mock_nexus_client.return_value.push_agents.assert_called_once_with(
-        expected_definition, expected_tool_mapping
+        expected_definition, expected_tool_mapping, None
     )
 
 
@@ -419,10 +428,13 @@ def test_push_to_nexus_success(
     expected_definition["agents"]["agent1"]["tools"][0]["source"]["entrypoint"] = "lambda_function.lambda_handler"
 
     mock_nexus_client.return_value.push_agents.assert_called_once_with(
-        expected_definition, tool_mapping
+        expected_definition, tool_mapping, None
     )
     mock_logger.info.assert_any_call(
-        f"Sending {len(tool_mapping)} processed tools to Nexus for project {configurator.project_uuid}"
+        "Sending %s processed tools to Nexus for project %s (apm_instrumentation=%s)",
+        len(tool_mapping),
+        configurator.project_uuid,
+        configurator.apm_instrumentation,
     )
     mock_logger.info.assert_any_call(f"Successfully pushed agents to Nexus for project {configurator.project_uuid}")
 
