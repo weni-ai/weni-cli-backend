@@ -14,11 +14,6 @@ logger = logging.getLogger(__name__)
 
 
 class PassiveAgentConfigurator(AgentConfigurator):
-    def __init__(
-        self, project_uuid: str, definition: dict[str, Any], toolkit_version: str, request_id: str, authorization: str
-    ):
-        super().__init__(project_uuid, definition, toolkit_version, request_id, authorization)
-
     def configure_agents(
         self,
         agent_resources_entries: list[tuple[str, bytes]],
@@ -157,7 +152,7 @@ class PassiveAgentConfigurator(AgentConfigurator):
                 for tool in agent_data["tools"]:
                     tool["source"]["entrypoint"] = "lambda_function.lambda_handler"
 
-            response = nexus_client.push_agents(self.definition, tool_mapping)
+            response = nexus_client.push_agents(self.definition, tool_mapping, self.apm_instrumentation)
 
             if response.status_code != status.HTTP_200_OK:
                 raise Exception(f"Failed to push agents: {response.status_code} {response.text}")

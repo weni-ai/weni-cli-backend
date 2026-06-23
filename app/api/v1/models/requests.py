@@ -17,6 +17,7 @@ class ConfigureAgentsRequestModel(BaseRequestModel):
 
     # type can only be "active" or "passive"
     type: Literal["active", "passive"]
+    apm_instrumentation: Literal["enabled", "disabled"] | None = None
 
 
 class RunRequestModel(BaseRequestModel):

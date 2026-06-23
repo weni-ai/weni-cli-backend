@@ -12,6 +12,7 @@ from starlette.datastructures import UploadFile
 
 from app.api.v1.models.requests import ConfigureAgentsRequestModel
 from app.services.agents.active.configurator import ActiveAgentConfigurator
+from app.services.agents.configurators import AgentConfiguratorContext
 from app.services.agents.passive.configurator import PassiveAgentConfigurator
 
 router = APIRouter()
@@ -59,13 +60,15 @@ async def configure_agents(
     }
 
     if configurator_cls := agent_configurators.get(data.type):
-        configurator_instance = configurator_cls(
-            str(data.project_uuid),
-            data.definition,
-            data.toolkit_version,
-            request_id,
-            authorization
+        context = AgentConfiguratorContext(
+            project_uuid=str(data.project_uuid),
+            definition=data.definition,
+            toolkit_version=data.toolkit_version,
+            request_id=request_id,
+            authorization=authorization,
+            apm_instrumentation=data.apm_instrumentation,
         )
+        configurator_instance = configurator_cls(context)
 
         return configurator_instance.configure_agents(agent_resources_folders_zips_entries)
 
