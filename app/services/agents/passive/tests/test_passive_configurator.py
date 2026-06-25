@@ -431,7 +431,10 @@ def test_push_to_nexus_success(
         expected_definition, tool_mapping, None
     )
     mock_logger.info.assert_any_call(
-        f"Sending {len(tool_mapping)} processed tools to Nexus for project {configurator.project_uuid}"
+        "Sending %s processed tools to Nexus for project %s (apm_instrumentation=%s)",
+        len(tool_mapping),
+        configurator.project_uuid,
+        configurator.apm_instrumentation,
     )
     mock_logger.info.assert_any_call(f"Successfully pushed agents to Nexus for project {configurator.project_uuid}")
 

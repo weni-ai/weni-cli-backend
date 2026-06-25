@@ -1,9 +1,12 @@
 import json
+import logging
 
 import requests
 from requests import Response
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class NexusClient:
@@ -29,9 +32,14 @@ class NexusClient:
             "agents": json.dumps(agents_definition),
         }
 
-        if apm_instrumentation:
+        if apm_instrumentation is not None:
             data["apm_instrumentation"] = apm_instrumentation
 
+        logger.info(
+            "Pushing agents to Nexus for project %s (apm_instrumentation=%s)",
+            self.project_uuid,
+            apm_instrumentation,
+        )
         return requests.post(url, headers=self.headers, data=data, files=tool_files)
 
     def get_log_group(self, agent_key: str, tool_key: str) -> Response:

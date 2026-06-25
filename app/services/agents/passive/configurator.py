@@ -144,7 +144,12 @@ class PassiveAgentConfigurator(AgentConfigurator):
             Tuple of (success, response)
         """
         try:
-            logger.info(f"Sending {len(tool_mapping)} processed tools to Nexus for project {self.project_uuid}")
+            logger.info(
+                "Sending %s processed tools to Nexus for project %s (apm_instrumentation=%s)",
+                len(tool_mapping),
+                self.project_uuid,
+                self.apm_instrumentation,
+            )
             nexus_client = NexusClient(self.authorization, self.project_uuid)
 
             # We need to change the entrypoint to the lambda function we've created

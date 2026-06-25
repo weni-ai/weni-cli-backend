@@ -39,7 +39,12 @@ async def configure_agents(
         StreamingResponse: Streaming response for future result handling
     """
     request_id = str(uuid4())
-    logger.info(f"Processing agent configuration for project {data.project_uuid} - request_id: {request_id}")
+    logger.info(
+        "Processing agent configuration for project %s - request_id: %s (apm_instrumentation=%s)",
+        data.project_uuid,
+        request_id,
+        data.apm_instrumentation,
+    )
     logger.debug(f"Agent definition: {data.definition}")
 
     # Access the form data with files
