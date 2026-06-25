@@ -16,13 +16,21 @@ class NexusClient:
         self.base_url = settings.NEXUS_BASE_URL
         self.project_uuid = project_uuid
 
-    def push_agents(self, agents_definition: dict, tool_files: dict) -> Response:
+    def push_agents(
+        self,
+        agents_definition: dict,
+        tool_files: dict,
+        apm_instrumentation: str | None = None,
+    ) -> Response:
         url = f"{self.base_url}/api/agents/push"
 
         data = {
             "project_uuid": self.project_uuid,
             "agents": json.dumps(agents_definition),
         }
+
+        if apm_instrumentation:
+            data["apm_instrumentation"] = apm_instrumentation
 
         return requests.post(url, headers=self.headers, data=data, files=tool_files)
 
