@@ -20,11 +20,6 @@ PREPROCESSOR_OUTPUT_EXAMPLE_KEY = "preprocessor_example"
 
 
 class ActiveAgentConfigurator(AgentConfigurator):
-    def __init__(
-        self, project_uuid: str, definition: dict[str, Any], toolkit_version: str, request_id: str, authorization: str
-    ):
-        super().__init__(project_uuid, definition, toolkit_version, request_id, authorization)
-
     def configure_agents(self, agent_resources_entries: list[tuple[str, bytes]]) -> StreamingResponse:
         resource_count = len(agent_resources_entries)
 
