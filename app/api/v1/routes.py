@@ -10,6 +10,7 @@ from app.api.v1.routers.evaluations import router as evaluations_router
 from app.api.v1.routers.health import router as health_router
 from app.api.v1.routers.permissions import router as permissions_router
 from app.api.v1.routers.runs import router as runs_router
+from app.api.v1.routers.ticketers import router as ticketers_router
 from app.api.v1.routers.tool_logs import router as tool_logs_router
 
 # Create main API router
@@ -23,3 +24,4 @@ router.include_router(evaluations_router, prefix="/evaluations", tags=["Evaluati
 router.include_router(permissions_router, prefix="/permissions", tags=["Permissions"])
 router.include_router(tool_logs_router, prefix="/tool-logs", tags=["Tool Logs"])
 router.include_router(channels_router, prefix="/channels", tags=["Channels"])
+router.include_router(ticketers_router, prefix="/ticketers", tags=["Ticketers"])
