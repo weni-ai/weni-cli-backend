@@ -4,6 +4,8 @@ Common test utilities for all tests in the application.
 
 from typing import Any
 
+import jwt
+
 
 class AsyncMock:
     """
@@ -132,3 +134,13 @@ class AsyncMock:
         for key, value in kwargs.items():
             assert key in call_kwargs, f"Expected kwarg '{key}' not found"
             assert call_kwargs[key] == value, f"For kwarg '{key}', expected: {value}, got: {call_kwargs[key]}"
+
+
+CLI_BEARER_TOKEN_TEST_SECRET = "test-only-cli-bearer-hmac-secret-key"
+_AUTHORIZATION_PREFIX = "Bearer "
+
+
+def make_cli_bearer_token(email: str | None) -> str:
+    payload = {"email": email} if email is not None else {}
+    token = jwt.encode(payload, CLI_BEARER_TOKEN_TEST_SECRET, algorithm="HS256")
+    return _AUTHORIZATION_PREFIX + token

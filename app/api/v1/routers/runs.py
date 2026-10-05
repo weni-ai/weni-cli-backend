@@ -11,11 +11,12 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Form, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from starlette.datastructures import FormData, UploadFile
 
 from app.api.v1.models.requests import RunRequestModel
+from app.api.v1.project_binding import bound_run_request
 from app.clients.aws import AWSLambdaClient
 from app.core.response import CLIResponse, send_response
 from app.services.runs import active_strategy, tool_strategy
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 @router.post("")
 async def run_test(  # noqa: PLR0915
     request: Request,
-    data: Annotated[RunRequestModel, Form()],
+    data: Annotated[RunRequestModel, Depends(bound_run_request)],
     authorization: Annotated[str, Header()],
 ) -> StreamingResponse:
     request_id = str(uuid4())

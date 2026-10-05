@@ -2,6 +2,8 @@
 
 import io
 import json
+import logging
+import re
 from collections.abc import Callable
 from typing import Any
 from uuid import UUID, uuid4
@@ -11,10 +13,11 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 
+from app.api.v1.project_binding import PROJECT_MISMATCH_CODE, PROJECT_MISMATCH_MESSAGE
 from app.clients.aws.lambda_client import LambdaFunction
 from app.core.config import settings
 from app.main import app
-from app.tests.utils import AsyncMock
+from app.tests.utils import AsyncMock, make_cli_bearer_token
 
 # Common test constants
 TEST_CONTENT = b"test content"
@@ -22,7 +25,8 @@ TEST_AGENT_NAME = "test-agent"
 TEST_TOOL_NAME = "test-tool"
 TEST_TOOL_KEY = "test_tool"
 TEST_AGENT_KEY = "test_agent"
-TEST_TOKEN = "Bearer test-token"
+TEST_PROJECT_UUID = "c67bc61e-c2b2-43f1-a409-88dec4bd4b9e"
+TEST_USER_EMAIL = "dev@example.com"
 TEST_FUNCTION_NAME = "test-function-name"
 TEST_FUNCTION_ARN = "arn:aws:lambda:us-east-1:123456789012:function:test-function-name"
 TEST_START_TIME = 1000.0
@@ -41,24 +45,24 @@ def api_path() -> str:
     return f"{settings.API_PREFIX}/v1/runs"
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def project_uuid() -> UUID:
     """Return a test project UUID."""
-    return uuid4()
+    return UUID(TEST_PROJECT_UUID)
 
 
 @pytest.fixture(scope="module")
-def auth_header() -> dict[str, str]:
+def auth_header(project_uuid: UUID) -> dict[str, str]:
     """Return an authorization header for tests."""
     return {
-        "Authorization": TEST_TOKEN,
+        "Authorization": make_cli_bearer_token(TEST_USER_EMAIL),
         "X-Project-Uuid": str(project_uuid),
         "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
     }
 
 
 @pytest.fixture
-def run_tool_request_data() -> dict[str, Any]:
+def run_tool_request_data(project_uuid: UUID) -> dict[str, Any]:
     """Return test data for run_tool_test endpoint."""
     agent_definition = {
         "name": TEST_AGENT_NAME,
@@ -80,7 +84,7 @@ def run_tool_request_data() -> dict[str, Any]:
     }
 
     return {
-        "project_uuid": str(uuid4()),
+        "project_uuid": str(project_uuid),
         "definition": json.dumps({"agents": {TEST_AGENT_KEY: agent_definition}}),
         "test_definition": json.dumps(test_definition),
         "tool_key": TEST_TOOL_KEY,
@@ -249,7 +253,7 @@ class TestRunToolEndpoint:
             (
                 "missing_tool_file",
                 {
-                    "project_uuid": str(uuid4()),
+                    "project_uuid": TEST_PROJECT_UUID,
                     "definition": json.dumps({"agents": {}}),
                     "test_definition": json.dumps({"tests": {}}),
                     "tool_key": TEST_TOOL_KEY,
@@ -535,6 +539,7 @@ class TestRunToolEndpoint:
         post_run_request_factory: Callable[[], Any],
         mocker: MockerFixture,
         run_tool_request_data: dict[str, Any],
+        auth_header: dict[str, str],
         mock_auth_middleware: None,
     ) -> None:
         """Test error handling when agent is not found in definition."""
@@ -565,11 +570,7 @@ class TestRunToolEndpoint:
             api_path,
             data=modified_data,
             files=files,
-            headers={
-                "Authorization": TEST_TOKEN,
-                "X-Project-Uuid": str(uuid4()),
-                "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
-            },
+            headers=auth_header,
         )
 
         # Assert
@@ -588,6 +589,7 @@ class TestRunToolEndpoint:
         post_run_request_factory: Callable[[], Any],
         mocker: MockerFixture,
         run_tool_request_data: dict[str, Any],
+        auth_header: dict[str, str],
         mock_auth_middleware: None,
     ) -> None:
         """Test error handling when tool is not found for agent."""
@@ -623,11 +625,7 @@ class TestRunToolEndpoint:
             api_path,
             data=modified_data,
             files=files,
-            headers={
-                "Authorization": TEST_TOKEN,
-                "X-Project-Uuid": str(uuid4()),
-                "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
-            },
+            headers=auth_header,
         )
 
         # Assert
@@ -785,7 +783,7 @@ def active_agent_definition() -> dict[str, Any]:
 
 
 @pytest.fixture
-def run_active_request_data(active_agent_definition: dict[str, Any]) -> dict[str, Any]:
+def run_active_request_data(active_agent_definition: dict[str, Any], project_uuid: UUID) -> dict[str, Any]:
     """Return form data for an active agent run request."""
     test_definition = {
         "tests": {
@@ -803,7 +801,7 @@ def run_active_request_data(active_agent_definition: dict[str, Any]) -> dict[str
     }
 
     return {
-        "project_uuid": str(uuid4()),
+        "project_uuid": str(project_uuid),
         "definition": json.dumps(active_agent_definition),
         "test_definition": json.dumps(test_definition),
         "agent_key": TEST_ACTIVE_AGENT_KEY,
@@ -1018,3 +1016,242 @@ class TestRunActiveAgentEndpoint:
         assert "Processor failed" in str(error_responses[-1])
 
         mock_lambda_client.delete_function.assert_called_once()
+
+
+_MISMATCH_PROJECT_UUID = "6f1c2c1e-8b7a-4d3e-9c2b-0a1b2c3d4e5f"
+_QUOTED_FIELD = re.compile(r'([a-z_]+)=("(?:\\.|[^"\\])*")')
+
+
+def _quoted_fields(message: str) -> list[tuple[str, str]]:
+    return [(key, json.loads(value)) for key, value in _QUOTED_FIELD.findall(message)]
+
+
+def _mismatch_warnings(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING and record.message.startswith("event=project_mismatch_rejected")
+    ]
+
+
+def _assert_bearer_absent(caplog: pytest.LogCaptureFixture, authorization: str) -> None:
+    assert authorization not in caplog.text
+    assert authorization.removeprefix("Bearer ") not in caplog.text
+
+
+class TestRunProjectBinding:
+    @pytest.fixture(autouse=True)
+    def downstream(self, mocker: MockerFixture, mock_auth_middleware: None) -> dict[str, Any]:
+        process_tool = AsyncMock()
+        return {
+            "process_tool": process_tool,
+            "lambda_client": mocker.patch("app.api.v1.routers.runs.AWSLambdaClient"),
+            "processor": mocker.patch("app.services.runs.active_strategy.ActiveAgentProcessor"),
+            "tool_mint": mocker.patch("app.services.runs.tool_strategy.generate_jwt_token"),
+            "active_mint": mocker.patch("app.services.runs.active_strategy.generate_jwt_token"),
+            "process_tool_patch": mocker.patch("app.services.runs.tool_strategy.process_tool", new=process_tool),
+        }
+
+    def test_tool_run_rejects_mismatched_project(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_tool_request_data: dict[str, Any],
+        downstream: dict[str, Any],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        body = {**run_tool_request_data, "project_uuid": _MISMATCH_PROJECT_UUID}
+        files = {"tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip")}
+
+        response = client.post(api_path, data=body, files=files, headers=auth_header)
+
+        self._assert_mismatch_response(response, TEST_PROJECT_UUID, _MISMATCH_PROJECT_UUID)
+        downstream["lambda_client"].assert_not_called()
+        assert downstream["process_tool"].call_count == 0
+        downstream["tool_mint"].assert_not_called()
+        downstream["active_mint"].assert_not_called()
+        assert len(_mismatch_warnings(caplog)) == 1
+        _assert_bearer_absent(caplog, auth_header["Authorization"])
+
+    def test_active_run_rejects_mismatched_project(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_active_request_data: dict[str, Any],
+        downstream: dict[str, Any],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        body = {**run_active_request_data, "project_uuid": _MISMATCH_PROJECT_UUID}
+        files = {
+            f"{TEST_ACTIVE_AGENT_KEY}:preprocessor_folder": (
+                "preprocessor.zip",
+                io.BytesIO(TEST_CONTENT),
+                "application/zip",
+            ),
+            f"{TEST_ACTIVE_AGENT_KEY}:{TEST_RULE_KEY}": (
+                "rule.zip",
+                io.BytesIO(TEST_CONTENT),
+                "application/zip",
+            ),
+        }
+
+        response = client.post(api_path, data=body, files=files, headers=auth_header)
+
+        self._assert_mismatch_response(response, TEST_PROJECT_UUID, _MISMATCH_PROJECT_UUID)
+        downstream["lambda_client"].assert_not_called()
+        assert downstream["process_tool"].call_count == 0
+        downstream["processor"].assert_not_called()
+        downstream["tool_mint"].assert_not_called()
+        downstream["active_mint"].assert_not_called()
+        assert len(_mismatch_warnings(caplog)) == 1
+        _assert_bearer_absent(caplog, auth_header["Authorization"])
+
+    def test_upper_case_body_is_a_mismatch(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_tool_request_data: dict[str, Any],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        body = {**run_tool_request_data, "project_uuid": TEST_PROJECT_UUID.upper()}
+        files = {"tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip")}
+
+        response = client.post(api_path, data=body, files=files, headers=auth_header)
+
+        self._assert_mismatch_response(response, TEST_PROJECT_UUID, TEST_PROJECT_UUID.upper())
+        _assert_bearer_absent(caplog, auth_header["Authorization"])
+
+    def test_mismatch_event_fields(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_tool_request_data: dict[str, Any],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        body = {**run_tool_request_data, "project_uuid": _MISMATCH_PROJECT_UUID}
+        files = {"tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip")}
+
+        response = client.post(api_path, data=body, files=files, headers=auth_header)
+
+        payload = response.json()
+        fields = dict(_quoted_fields(_mismatch_warnings(caplog)[0].message))
+        assert list(fields) == [
+            "header_project_uuid",
+            "body_project_uuid",
+            "endpoint",
+            "request_id",
+            "user_email",
+        ]
+        assert fields["header_project_uuid"] == TEST_PROJECT_UUID
+        assert fields["body_project_uuid"] == _MISMATCH_PROJECT_UUID
+        assert fields["endpoint"] == api_path
+        assert fields["request_id"] == payload["request_id"]
+        assert fields["user_email"] == TEST_USER_EMAIL
+        _assert_bearer_absent(caplog, auth_header["Authorization"])
+
+    def test_mismatch_event_omits_email_when_token_has_none(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_tool_request_data: dict[str, Any],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        authorization = make_cli_bearer_token(None)
+        headers = {**auth_header, "Authorization": authorization}
+        body = {**run_tool_request_data, "project_uuid": _MISMATCH_PROJECT_UUID}
+        files = {"tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip")}
+
+        response = client.post(api_path, data=body, files=files, headers=headers)
+
+        self._assert_mismatch_response(response, TEST_PROJECT_UUID, _MISMATCH_PROJECT_UUID)
+        fields = dict(_quoted_fields(_mismatch_warnings(caplog)[0].message))
+        assert "user_email" not in fields
+        _assert_bearer_absent(caplog, authorization)
+
+    @pytest.mark.parametrize(
+        "body_project_uuid",
+        [
+            pytest.param("not-a-uuid", id="not-a-uuid"),
+            pytest.param(None, id="missing"),
+        ],
+    )
+    def test_invalid_or_missing_body_project_returns_422(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_tool_request_data: dict[str, Any],
+        body_project_uuid: str | None,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        body = {key: value for key, value in run_tool_request_data.items() if key != "project_uuid"}
+        if body_project_uuid is not None:
+            body["project_uuid"] = body_project_uuid
+        files = {"tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip")}
+
+        response = client.post(api_path, data=body, files=files, headers=auth_header)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert _mismatch_warnings(caplog) == []
+        _assert_bearer_absent(caplog, auth_header["Authorization"])
+
+    def test_tool_mismatch_without_tool_file_is_403(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_tool_request_data: dict[str, Any],
+        downstream: dict[str, Any],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        body = {**run_tool_request_data, "project_uuid": _MISMATCH_PROJECT_UUID}
+
+        response = client.post(api_path, data=body, headers=auth_header)
+
+        self._assert_mismatch_response(response, TEST_PROJECT_UUID, _MISMATCH_PROJECT_UUID)
+        downstream["lambda_client"].assert_not_called()
+        assert downstream["process_tool"].call_count == 0
+        _assert_bearer_absent(caplog, auth_header["Authorization"])
+
+    def test_active_mismatch_without_resources_is_403(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_active_request_data: dict[str, Any],
+        downstream: dict[str, Any],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        body = {**run_active_request_data, "project_uuid": _MISMATCH_PROJECT_UUID}
+
+        response = client.post(api_path, data=body, headers=auth_header)
+
+        self._assert_mismatch_response(response, TEST_PROJECT_UUID, _MISMATCH_PROJECT_UUID)
+        downstream["processor"].assert_not_called()
+        downstream["lambda_client"].assert_not_called()
+        _assert_bearer_absent(caplog, auth_header["Authorization"])
+
+    def _assert_mismatch_response(self, response: Any, header_project: str, body_project: str) -> None:
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        payload = response.json()
+        assert payload["message"] == PROJECT_MISMATCH_MESSAGE
+        assert payload["data"] is None
+        assert payload["success"] is False
+        assert payload["code"] == PROJECT_MISMATCH_CODE
+        assert str(UUID(payload["request_id"])) == payload["request_id"]
+        assert set(payload) == {"message", "data", "success", "code", "request_id"}
+        assert header_project not in response.text
+        assert body_project not in response.text
