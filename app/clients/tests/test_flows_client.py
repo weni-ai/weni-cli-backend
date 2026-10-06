@@ -34,6 +34,11 @@ class TestFlowsClient:
         "schemes": ["tel"],
         "config": {"wa_pin": "123456", "wa_verified_name": "Test Business"},
     }
+    TEST_TICKETER_DEFINITION = {
+        "name": "Generic Ticketer",
+        "ticketer_type": "generic",
+        "config": {"base_url": "https://example.com", "api_token": "t"},
+    }
     TEST_RESPONSE_DATA = {
         "uuid": "channel-uuid-123",
         "name": "Test Channel",
@@ -187,3 +192,39 @@ class TestFlowsClient:
 
         # Assert
         assert response.status_code == HTTPStatus.BAD_REQUEST
+
+    def test_list_ticketers_sends_query_params(self, requests_mock: requests_mock.Mocker) -> None:
+        client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
+        url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/ticketer"
+        requests_mock.get(url, status_code=200, json={"results": []})
+        client.list_ticketers()
+        qs = parse_qs(urlparse(requests_mock.last_request.url).query)
+        assert qs["org"] == [self.TEST_PROJECT_UUID]
+        assert qs["user"] == [self.TEST_USER_EMAIL]
+
+    def test_get_ticketer_url(self, requests_mock: requests_mock.Mocker) -> None:
+        client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
+        ticketer_uuid = "11111111-1111-1111-1111-111111111111"
+        url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/ticketer/{ticketer_uuid}"
+        requests_mock.get(url, status_code=200, json={"uuid": ticketer_uuid, "config": {}})
+        response = client.get_ticketer(ticketer_uuid)
+        assert response.status_code == 200
+
+    def test_update_ticketer_put_form(self, requests_mock: requests_mock.Mocker) -> None:
+        client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
+        ticketer_uuid = "11111111-1111-1111-1111-111111111111"
+        url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/ticketer/{ticketer_uuid}"
+        requests_mock.put(url, status_code=200, json={"uuid": ticketer_uuid})
+        client.update_ticketer(ticketer_uuid, self.TEST_TICKETER_DEFINITION)
+        body = parse_qs(requests_mock.last_request.text)
+        assert body["user"] == [self.TEST_USER_EMAIL]
+        assert body["org"] == [self.TEST_PROJECT_UUID]
+        assert body["name"] == ["Generic Ticketer"]
+
+    def test_delete_ticketer_204(self, requests_mock: requests_mock.Mocker) -> None:
+        client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
+        ticketer_uuid = "11111111-1111-1111-1111-111111111111"
+        url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/ticketer/{ticketer_uuid}"
+        requests_mock.delete(url, status_code=204)
+        response = client.delete_ticketer(ticketer_uuid)
+        assert response.status_code == 204
