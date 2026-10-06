@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any
 from uuid import UUID, uuid4
 
+import jwt
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
@@ -18,7 +19,8 @@ from app.api.v1.run_attribution import RUN_NOT_ATTRIBUTABLE_CODE, RUN_NOT_ATTRIB
 from app.clients.aws.lambda_client import LambdaFunction
 from app.core.config import settings
 from app.main import app
-from app.tests.utils import AsyncMock, make_cli_bearer_token
+from app.services.jwt_generator import DEFAULT_EXPIRATION_MINUTES
+from app.tests.utils import AsyncMock, generate_rsa_key_pair, make_cli_bearer_token
 
 # Common test constants
 TEST_CONTENT = b"test content"
@@ -682,7 +684,7 @@ class TestRunToolEndpoint:
 
         # Mock generate_jwt_token to return a predictable token
         mocker.patch(
-            "app.services.runs.tool_strategy.generate_jwt_token",
+            "app.services.runs.token_issuer.generate_jwt_token",
             return_value="mocked-jwt-token",
         )
 
@@ -888,7 +890,7 @@ class TestRunActiveAgentEndpoint:
         mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
 
         mocker.patch(
-            "app.services.runs.active_strategy.generate_jwt_token",
+            "app.services.runs.token_issuer.generate_jwt_token",
             return_value="mocked-jwt-token",
         )
 
@@ -1040,16 +1042,21 @@ def _assert_bearer_absent(caplog: pytest.LogCaptureFixture, authorization: str) 
     assert authorization.removeprefix("Bearer ") not in caplog.text
 
 
+def _assert_no_run_token_minted(caplog: pytest.LogCaptureFixture) -> None:
+    assert not any(record.message.startswith("event=run_token_minted") for record in caplog.records)
+
+
 class TestRunProjectBinding:
     @pytest.fixture(autouse=True)
     def downstream(self, mocker: MockerFixture, mock_auth_middleware: None) -> dict[str, Any]:
         process_tool = AsyncMock()
+        mint = mocker.patch("app.services.runs.token_issuer.generate_jwt_token")
         return {
             "process_tool": process_tool,
             "lambda_client": mocker.patch("app.api.v1.routers.runs.AWSLambdaClient"),
             "processor": mocker.patch("app.services.runs.active_strategy.ActiveAgentProcessor"),
-            "tool_mint": mocker.patch("app.services.runs.tool_strategy.generate_jwt_token"),
-            "active_mint": mocker.patch("app.services.runs.active_strategy.generate_jwt_token"),
+            "tool_mint": mint,
+            "active_mint": mint,
             "process_tool_patch": mocker.patch("app.services.runs.tool_strategy.process_tool", new=process_tool),
         }
 
@@ -1075,6 +1082,7 @@ class TestRunProjectBinding:
         downstream["active_mint"].assert_not_called()
         assert len(_mismatch_warnings(caplog)) == 1
         _assert_bearer_absent(caplog, auth_header["Authorization"])
+        _assert_no_run_token_minted(caplog)
 
     def test_active_run_rejects_mismatched_project(
         self,
@@ -1110,6 +1118,7 @@ class TestRunProjectBinding:
         downstream["active_mint"].assert_not_called()
         assert len(_mismatch_warnings(caplog)) == 1
         _assert_bearer_absent(caplog, auth_header["Authorization"])
+        _assert_no_run_token_minted(caplog)
 
     def test_upper_case_body_is_a_mismatch(
         self,
@@ -1127,6 +1136,7 @@ class TestRunProjectBinding:
 
         self._assert_mismatch_response(response, TEST_PROJECT_UUID, TEST_PROJECT_UUID.upper())
         _assert_bearer_absent(caplog, auth_header["Authorization"])
+        _assert_no_run_token_minted(caplog)
 
     def test_mismatch_event_fields(
         self,
@@ -1157,6 +1167,7 @@ class TestRunProjectBinding:
         assert fields["request_id"] == payload["request_id"]
         assert fields["user_email"] == TEST_USER_EMAIL
         _assert_bearer_absent(caplog, auth_header["Authorization"])
+        _assert_no_run_token_minted(caplog)
 
     def test_mismatch_event_omits_email_when_token_has_none(
         self,
@@ -1178,6 +1189,7 @@ class TestRunProjectBinding:
         fields = dict(_quoted_fields(_mismatch_warnings(caplog)[0].message))
         assert "user_email" not in fields
         _assert_bearer_absent(caplog, authorization)
+        _assert_no_run_token_minted(caplog)
 
     @pytest.mark.parametrize(
         "body_project_uuid",
@@ -1206,6 +1218,7 @@ class TestRunProjectBinding:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         assert _mismatch_warnings(caplog) == []
         _assert_bearer_absent(caplog, auth_header["Authorization"])
+        _assert_no_run_token_minted(caplog)
 
     def test_tool_mismatch_without_tool_file_is_403(
         self,
@@ -1225,6 +1238,7 @@ class TestRunProjectBinding:
         downstream["lambda_client"].assert_not_called()
         assert downstream["process_tool"].call_count == 0
         _assert_bearer_absent(caplog, auth_header["Authorization"])
+        _assert_no_run_token_minted(caplog)
 
     def test_active_mismatch_without_resources_is_403(
         self,
@@ -1244,6 +1258,7 @@ class TestRunProjectBinding:
         downstream["processor"].assert_not_called()
         downstream["lambda_client"].assert_not_called()
         _assert_bearer_absent(caplog, auth_header["Authorization"])
+        _assert_no_run_token_minted(caplog)
 
     def _assert_mismatch_response(self, response: Any, header_project: str, body_project: str) -> None:
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -1270,12 +1285,13 @@ class TestRunAttribution:
     @pytest.fixture(autouse=True)
     def downstream(self, mocker: MockerFixture, mock_auth_middleware: None) -> dict[str, Any]:
         process_tool = AsyncMock()
+        mint = mocker.patch("app.services.runs.token_issuer.generate_jwt_token")
         return {
             "process_tool": process_tool,
             "lambda_client": mocker.patch("app.api.v1.routers.runs.AWSLambdaClient"),
             "processor": mocker.patch("app.services.runs.active_strategy.ActiveAgentProcessor"),
-            "tool_mint": mocker.patch("app.services.runs.tool_strategy.generate_jwt_token"),
-            "active_mint": mocker.patch("app.services.runs.active_strategy.generate_jwt_token"),
+            "tool_mint": mint,
+            "active_mint": mint,
             "process_tool_patch": mocker.patch("app.services.runs.tool_strategy.process_tool", new=process_tool),
         }
 
@@ -1312,6 +1328,7 @@ class TestRunAttribution:
         assert len(warnings) == 1
         assert dict(_quoted_fields(warnings[0].message))["request_id"] == response.json()["request_id"]
         _assert_bearer_absent(caplog, authorization)
+        _assert_no_run_token_minted(caplog)
 
     def test_active_run_with_auth_tokens_and_no_email_is_403(
         self,
@@ -1348,6 +1365,7 @@ class TestRunAttribution:
         downstream["processor"].assert_not_called()
         assert len(_not_attributable_warnings(caplog)) == 1
         _assert_bearer_absent(caplog, authorization)
+        _assert_no_run_token_minted(caplog)
 
     def test_tool_run_with_zero_test_cases_and_no_email_is_403(
         self,
@@ -1368,6 +1386,7 @@ class TestRunAttribution:
         self._assert_not_attributable_response(response)
         assert len(_not_attributable_warnings(caplog)) == 1
         _assert_bearer_absent(caplog, authorization)
+        _assert_no_run_token_minted(caplog)
 
     def test_mismatch_wins_over_missing_identity(
         self,
@@ -1391,6 +1410,7 @@ class TestRunAttribution:
         fields = dict(_quoted_fields(_mismatch_warnings(caplog)[0].message))
         assert "user_email" not in fields
         _assert_bearer_absent(caplog, authorization)
+        _assert_no_run_token_minted(caplog)
 
     def test_invalid_body_project_wins_over_missing_identity(
         self,
@@ -1412,6 +1432,7 @@ class TestRunAttribution:
         assert _mismatch_warnings(caplog) == []
         assert _not_attributable_warnings(caplog) == []
         _assert_bearer_absent(caplog, authorization)
+        _assert_no_run_token_minted(caplog)
 
     def _assert_not_attributable_response(self, response: Any) -> None:
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -1422,3 +1443,303 @@ class TestRunAttribution:
         assert payload["code"] == RUN_NOT_ATTRIBUTABLE_CODE
         assert str(UUID(payload["request_id"])) == payload["request_id"]
         assert set(payload) == {"message", "data", "success", "code", "request_id"}
+
+
+_DEFINITION_PROJECT_UUID = "6f8d2b1e-4a3c-4f5e-9b8d-1234567890ab"
+_USER_SUPPLIED_TOKEN = "user-supplied-token"
+
+
+def _assert_minted_tokens_absent(caplog: pytest.LogCaptureFixture, authorization: str, tokens: list[str]) -> None:
+    _assert_bearer_absent(caplog, authorization)
+    for token in tokens:
+        assert token not in caplog.text
+        for part in token.split("."):
+            assert part not in caplog.text
+
+
+def _decode_run_token(token: str, public_pem: str) -> dict[str, Any]:
+    decoded = jwt.decode(token, public_pem, algorithms=["RS256"])
+    assert set(decoded) == {"project_uuid", "exp", "iat"}
+    assert decoded["exp"] - decoded["iat"] == DEFAULT_EXPIRATION_MINUTES * 60
+    return decoded
+
+
+def _minted_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [
+        record
+        for record in caplog.records
+        if record.levelno == logging.INFO and record.message.startswith("event=run_token_minted")
+    ]
+
+
+class TestRunTokenMinting:
+    @pytest.fixture(autouse=True)
+    def public_pem(self, mocker: MockerFixture, mock_auth_middleware: None) -> str:
+        private_pem, public_pem = generate_rsa_key_pair()
+        mocker.patch.object(settings, "JWT_SECRET_KEY", private_pem)
+        return public_pem
+
+    def _mock_tool_lambda(self, mocker: MockerFixture) -> Any:
+        mock_process_result = {
+            "message": "Tool processed successfully",
+            "data": {"tool_key": TEST_TOOL_KEY},
+            "success": True,
+            "code": "TOOL_PROCESSED",
+        }
+        mocker.patch(
+            "app.services.runs.tool_strategy.process_tool",
+            new=AsyncMock(return_value=(mock_process_result, io.BytesIO(TEST_CONTENT))),
+        )
+        mock_lambda_client = mocker.MagicMock()
+        mock_lambda_client.create_function = mocker.MagicMock(
+            return_value=LambdaFunction(
+                arn=TEST_FUNCTION_ARN,
+                name=TEST_FUNCTION_NAME,
+                log_group="test-log-group",
+            )
+        )
+        mock_lambda_client.wait_for_function_active = AsyncMock(return_value=True)
+        mock_lambda_client.invoke_function = mocker.MagicMock(
+            return_value=(
+                {"response": {"result": "success"}, "status_code": 200, "logs": ""},
+                TEST_START_TIME,
+                TEST_END_TIME,
+            )
+        )
+        mock_lambda_client.delete_function = mocker.MagicMock(return_value=None)
+        mocker.patch("app.api.v1.routers.runs.AWSLambdaClient", return_value=mock_lambda_client)
+        mocker.patch("asyncio.sleep", new=AsyncMock(return_value=None))
+        return mock_lambda_client
+
+    def _mock_active_lambda(self, mocker: MockerFixture) -> Any:
+        mock_processor = mocker.MagicMock()
+        mock_processor.process = mocker.MagicMock(return_value=io.BytesIO(b"fake-active-zip-bytes"))
+        mocker.patch("app.services.runs.active_strategy.ActiveAgentProcessor", return_value=mock_processor)
+        return self._mock_tool_lambda(mocker)
+
+    def test_tool_run_mints_one_token_per_test_case(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_tool_request_data: dict[str, Any],
+        public_pem: str,
+        mocker: MockerFixture,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        lambda_client = self._mock_tool_lambda(mocker)
+
+        response = client.post(
+            api_path,
+            data=run_tool_request_data,
+            files={"tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip")},
+            headers=auth_header,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        messages = parse_streaming_response(response)
+        test_cases = json.loads(run_tool_request_data["test_definition"])["tests"]
+        completed = [message for message in messages if message.get("code") == "TEST_CASE_COMPLETED"]
+        assert len(completed) == len(test_cases)
+        request_id = messages[0]["request_id"]
+        assert all(message["request_id"] == request_id for message in messages)
+
+        tokens = []
+        for call in lambda_client.invoke_function.call_args_list:
+            project = json.loads(call[0][1]["sessionAttributes"]["project"])
+            tokens.append(project["auth_token"])
+        assert len(tokens) == len(test_cases)
+        decoded_projects = []
+        for token in tokens:
+            decoded = _decode_run_token(token, public_pem)
+            assert decoded["project_uuid"] == TEST_PROJECT_UUID
+            decoded_projects.append(decoded["project_uuid"])
+
+        records = _minted_records(caplog)
+        assert len(records) == len(test_cases)
+        for record, project_uuid in zip(records, decoded_projects, strict=True):
+            fields = dict(_quoted_fields(record.message))
+            assert list(fields) == [
+                "user_email",
+                "project_uuid",
+                "agent_key",
+                "tool_key",
+                "run_type",
+                "request_id",
+            ]
+            assert fields["user_email"] == TEST_USER_EMAIL
+            assert fields["project_uuid"] == project_uuid
+            assert fields["agent_key"] == TEST_AGENT_KEY
+            assert fields["tool_key"] == TEST_TOOL_KEY
+            assert fields["run_type"] == "passive"
+            assert fields["request_id"] == request_id
+        _assert_minted_tokens_absent(caplog, auth_header["Authorization"], tokens)
+
+    def test_upper_case_header_mints_the_canonical_project(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_tool_request_data: dict[str, Any],
+        public_pem: str,
+        mocker: MockerFixture,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        lambda_client = self._mock_tool_lambda(mocker)
+        headers = {**auth_header, "X-Project-Uuid": TEST_PROJECT_UUID.upper()}
+        body = {**run_tool_request_data, "project_uuid": TEST_PROJECT_UUID.upper()}
+
+        response = client.post(
+            api_path,
+            data=body,
+            files={"tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip")},
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        tokens = [
+            json.loads(call[0][1]["sessionAttributes"]["project"])["auth_token"]
+            for call in lambda_client.invoke_function.call_args_list
+        ]
+        assert tokens
+        for token in tokens:
+            assert _decode_run_token(token, public_pem)["project_uuid"] == TEST_PROJECT_UUID
+        for record in _minted_records(caplog):
+            assert dict(_quoted_fields(record.message))["project_uuid"] == TEST_PROJECT_UUID
+        _assert_minted_tokens_absent(caplog, headers["Authorization"], tokens)
+
+    def test_active_run_passes_through_supplied_token_and_mints_the_other(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_active_request_data: dict[str, Any],
+        public_pem: str,
+        mocker: MockerFixture,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        lambda_client = self._mock_active_lambda(mocker)
+        test_definition = {
+            "tests": {
+                "with_token": {
+                    "payload": {},
+                    "project": {"uuid": _DEFINITION_PROJECT_UUID, "auth_token": _USER_SUPPLIED_TOKEN},
+                },
+                "without_token": {
+                    "payload": {},
+                    "project": {"uuid": _DEFINITION_PROJECT_UUID},
+                },
+            }
+        }
+        body = {**run_active_request_data, "test_definition": json.dumps(test_definition)}
+        files = {
+            f"{TEST_ACTIVE_AGENT_KEY}:preprocessor_folder": (
+                "preprocessor.zip",
+                io.BytesIO(TEST_CONTENT),
+                "application/zip",
+            ),
+            f"{TEST_ACTIVE_AGENT_KEY}:{TEST_RULE_KEY}": (
+                "rule.zip",
+                io.BytesIO(TEST_CONTENT),
+                "application/zip",
+            ),
+        }
+
+        response = client.post(api_path, data=body, files=files, headers=auth_header)
+
+        assert response.status_code == status.HTTP_200_OK
+        projects = [call[0][1]["project"] for call in lambda_client.invoke_function.call_args_list]
+        assert projects[0]["auth_token"] == _USER_SUPPLIED_TOKEN
+        minted = projects[1]["auth_token"]
+        decoded = _decode_run_token(minted, public_pem)
+        assert decoded["project_uuid"] == TEST_PROJECT_UUID
+        assert decoded["project_uuid"] != _DEFINITION_PROJECT_UUID
+
+        records = _minted_records(caplog)
+        assert len(records) == 1
+        fields = dict(_quoted_fields(records[0].message))
+        assert "tool_key" not in fields
+        assert fields["run_type"] == "active"
+        assert fields["project_uuid"] == decoded["project_uuid"]
+        _assert_minted_tokens_absent(caplog, auth_header["Authorization"], [minted])
+
+    def test_zero_test_cases_mint_nothing(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_tool_request_data: dict[str, Any],
+        mocker: MockerFixture,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        self._mock_tool_lambda(mocker)
+        body = {**run_tool_request_data, "test_definition": json.dumps({"tests": {}})}
+
+        response = client.post(
+            api_path,
+            data=body,
+            files={"tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip")},
+            headers=auth_header,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert _minted_records(caplog) == []
+        _assert_minted_tokens_absent(caplog, auth_header["Authorization"], [])
+
+    def test_invoke_failure_keeps_the_token_minted_before_it(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_tool_request_data: dict[str, Any],
+        mocker: MockerFixture,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        lambda_client = self._mock_tool_lambda(mocker)
+        lambda_client.invoke_function.side_effect = RuntimeError("invoke failed")
+
+        response = client.post(
+            api_path,
+            data=run_tool_request_data,
+            files={"tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip")},
+            headers=auth_header,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(_minted_records(caplog)) == 1
+        token = json.loads(lambda_client.invoke_function.call_args_list[0][0][1]["sessionAttributes"]["project"])[
+            "auth_token"
+        ]
+        _assert_minted_tokens_absent(caplog, auth_header["Authorization"], [token])
+
+    def test_process_tool_failure_mints_nothing(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_tool_request_data: dict[str, Any],
+        mocker: MockerFixture,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        self._mock_tool_lambda(mocker)
+        mocker.patch(
+            "app.services.runs.tool_strategy.process_tool",
+            new=AsyncMock(side_effect=RuntimeError("process failed")),
+        )
+
+        response = client.post(
+            api_path,
+            data=run_tool_request_data,
+            files={"tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip")},
+            headers=auth_header,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert _minted_records(caplog) == []
+        _assert_minted_tokens_absent(caplog, auth_header["Authorization"], [])

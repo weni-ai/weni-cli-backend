@@ -20,6 +20,7 @@ from app.api.v1.run_attribution import AttributedRun, attributed_run_request
 from app.clients.aws import AWSLambdaClient
 from app.core.response import CLIResponse, send_response
 from app.services.runs import active_strategy, tool_strategy
+from app.services.runs.token_issuer import RunTokenIssuer
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -42,6 +43,14 @@ async def run_test(  # noqa: PLR0915
 
     function_name = f"cli-{str(uuid4())}"
     lambda_client = AWSLambdaClient()
+    token_issuer = RunTokenIssuer(
+        authorized_project_uuid=run.authorized_project_uuid,
+        user_email=run.user_email,
+        agent_key=run.request.agent_key,
+        tool_key=None if run.request.type == "active" else run.request.tool_key,
+        run_type=run.request.type,
+        request_id=request_id,
+    )
 
     if run.request.type == "active":
         resources = await _extract_active_resources(form)
@@ -59,6 +68,7 @@ async def run_test(  # noqa: PLR0915
                     function_name=function_name,
                     request_id=request_id,
                     lambda_client=lambda_client,
+                    token_issuer=token_issuer,
                 ):
                     yield chunk
             except Exception as e:
@@ -85,6 +95,7 @@ async def run_test(  # noqa: PLR0915
                 function_name=function_name,
                 request_id=request_id,
                 lambda_client=lambda_client,
+                token_issuer=token_issuer,
             ):
                 yield chunk
         except Exception as e:

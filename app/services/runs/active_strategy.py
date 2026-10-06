@@ -8,11 +8,11 @@ from typing import Any
 from app.api.v1.models.requests import RunRequestModel
 from app.clients.aws import AWSLambdaClient
 from app.clients.aws.lambda_client import LambdaFunction
-from app.core.config import settings
 from app.core.response import CLIResponse, send_response
 from app.services.agents.active.models import ActiveAgentResourceModel, Resource, RuleResource
 from app.services.agents.active.processor import ActiveAgentProcessor
-from app.services.jwt_generator import JWT_PROJECT_KEY, generate_jwt_token
+from app.services.jwt_generator import JWT_PROJECT_KEY
+from app.services.runs.token_issuer import RunTokenIssuer
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +94,8 @@ def build_agent_resource(
 
 
 def build_active_test_event(
-    project_uuid: str,
     test_data: dict[str, Any],
+    token_issuer: RunTokenIssuer,
     fallback_credentials: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Mount the lambda event for the active agent template.
@@ -109,8 +109,7 @@ def build_active_test_event(
     project = dict(project)
 
     if JWT_PROJECT_KEY not in project:
-        token = generate_jwt_token(project_uuid, settings.JWT_SECRET_KEY)
-        project[JWT_PROJECT_KEY] = token
+        project[JWT_PROJECT_KEY] = token_issuer.issue()
 
     credentials = test_data.get("credentials")
     if credentials is None:
@@ -129,12 +128,13 @@ def build_active_test_event(
     }
 
 
-async def run(  # noqa: PLR0915
+async def run(  # noqa: PLR0913, PLR0915
     data: RunRequestModel,
     resources: list[tuple[str, bytes]],
     function_name: str,
     request_id: str,
     lambda_client: AWSLambdaClient,
+    token_issuer: RunTokenIssuer,
 ) -> AsyncIterator[bytes]:
     """Stream NDJSON responses while running test cases for an active agent."""
 
@@ -221,8 +221,8 @@ async def run(  # noqa: PLR0915
         yield send_response(running_response, request_id=request_id)
 
         test_event = build_active_test_event(
-            project_uuid=str(data.project_uuid),
             test_data=test_data,
+            token_issuer=token_issuer,
             fallback_credentials=fallback_credentials,
         )
 
