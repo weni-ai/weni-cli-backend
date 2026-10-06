@@ -4,7 +4,12 @@ from uuid import uuid4
 
 from fastapi import Form, Header, Request, status
 
-from app.api.v1.models.requests import RunRequestModel
+from app.api.v1.models.requests import (
+    ConfigureAgentsRequestModel,
+    CreateChannelRequestModel,
+    CreateTicketerRequestModel,
+    RunRequestModel,
+)
 from app.api.v1.rejections import RequestRejectedError
 from app.api.v1.user_identity import read_user_email
 from app.core.log_events import format_log_event
@@ -50,11 +55,45 @@ def ensure_body_project_is_authorized(
     raise ProjectMismatchError(request_id)
 
 
+# FastAPI validates the body from each dependency's parameter annotation, which is what
+# keeps an invalid body at 422. One shared function would drop that model. Runs and agents
+# re-read the multipart field, and channels and ticketers re-read the JSON field, because
+# data.project_uuid is already normalized.
 async def bound_run_request(
     request: Request,
     data: Annotated[RunRequestModel, Form()],
     x_project_uuid: Annotated[str, Header()],
 ) -> RunRequestModel:
     raw_project_uuid = cast(str, (await request.form())["project_uuid"])
+    ensure_body_project_is_authorized(request, x_project_uuid, raw_project_uuid)
+    return data
+
+
+async def bound_agents_request(
+    request: Request,
+    data: Annotated[ConfigureAgentsRequestModel, Form()],
+    x_project_uuid: Annotated[str, Header()],
+) -> ConfigureAgentsRequestModel:
+    raw_project_uuid = cast(str, (await request.form())["project_uuid"])
+    ensure_body_project_is_authorized(request, x_project_uuid, raw_project_uuid)
+    return data
+
+
+async def bound_channel_request(
+    request: Request,
+    data: CreateChannelRequestModel,
+    x_project_uuid: Annotated[str, Header()],
+) -> CreateChannelRequestModel:
+    raw_project_uuid = cast(str, (await request.json())["project_uuid"])
+    ensure_body_project_is_authorized(request, x_project_uuid, raw_project_uuid)
+    return data
+
+
+async def bound_ticketer_request(
+    request: Request,
+    data: CreateTicketerRequestModel,
+    x_project_uuid: Annotated[str, Header()],
+) -> CreateTicketerRequestModel:
+    raw_project_uuid = cast(str, (await request.json())["project_uuid"])
     ensure_body_project_is_authorized(request, x_project_uuid, raw_project_uuid)
     return data
