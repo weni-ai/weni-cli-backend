@@ -73,8 +73,8 @@ Technical approach (details in [research.md](./research.md)):
 | XII | Scalability and Peak Load | PASS | Stateless (no state outside the request). Peak declared above. |
 | XIII | Diagnosable Errors | **VIOLATION (justified)** | No new error is reported to Sentry (R5). **But** sentry-sdk's default `LoggingIntegration` attaches the `run_token_minted` line, `user_email` included, as a breadcrumb to the Sentry event of a later `logger.error` in the same run (`_yield_processing_error`). This conflicts with "e-mail addresses MUST NOT be attached to an error report". See Complexity Tracking. |
 | XIV | Tests Exercise Flows | PASS | Router flow tests cover success and every failure path for all four endpoints. Unit tests cover input variations (see quickstart table). |
-| XV | Explicit Over Clever | PASS | Explicit dependency per endpoint (the factory was rejected, R2). Named constants for messages, codes and event names. The only comments explain constraints (why there is no `status_code` attribute, why raw values are compared). |
-| XVI | Contained Changes | PASS | Only the files listed below. Existing tests change only where they encode the unsafe behavior or lack an identity (R8). `middlewares_test.py` is not touched. |
+| XV | Explicit Over Clever | PASS | Explicit dependency per endpoint (the factory was rejected, R2). The four `bound_*` dependencies stay separate; the comment above `bound_run_request` explains why. Named constants for messages, codes and event names. Comments explain constraints: why there is no `status_code` attribute, why raw values are compared, why the JWT signature is not verified, and why those four dependencies are not collapsed. |
+| XVI | Contained Changes | PASS | Feature edits are the files listed below. Existing tests change only where they encode the unsafe behavior or lack an identity (R8). `middlewares_test.py` is not touched. Commit `b18a889` also changes `app/clients/aws/logs_client.py`, which stays outside that list. |
 
 **Pre-research gate**: two MUST violations (III, V). Both were raised with the
 user and accepted as justified exceptions (session 2026-10-05). They are
@@ -108,7 +108,7 @@ AuthorizationMiddleware (unchanged)
 |---|---|
 | `app/api/v1/rejections.py` | `RequestRejectedError` (base: `http_status`, `code`, `message`, `request_id`; deliberately no `status_code`, R5) and `handle_request_rejected`, which returns a `JSONResponse` in the CLIResponse shape |
 | `app/api/v1/user_identity.py` | `read_user_email(authorization: str \| None) -> str \| None`: `Bearer` prefix, unverified PyJWT decode, non-empty string `email`, otherwise `None` |
-| `app/api/v1/project_binding.py` | `PROJECT_MISMATCH_MESSAGE`/`_CODE`, `ProjectMismatchError`, `ensure_body_project_is_authorized(request, authorized, requested_raw)` (logs `project_mismatch_rejected`, raises), and the dependencies `bound_run_request` and `bound_agents_request` (Form; raw value from `request.form()`) plus `bound_channel_request` and `bound_ticketer_request` (JSON; raw value from `request.json()`) |
+| `app/api/v1/project_binding.py` | `PROJECT_MISMATCH_MESSAGE`/`_CODE`, `ProjectMismatchError`, `ensure_body_project_is_authorized(request, authorized, requested_raw)` (logs `project_mismatch_rejected`, raises), and four separate dependencies: `bound_run_request` and `bound_agents_request` (Form; raw value from `request.form()`) plus `bound_channel_request` and `bound_ticketer_request` (JSON; raw value from `request.json()`). They stay separate. The comment above `bound_run_request` explains why: FastAPI validates the body from each dependency's parameter annotation, which keeps an invalid body at 422, and one shared function would drop that model. Runs and agents re-read the multipart field, and channels and ticketers re-read the JSON field, because `data.project_uuid` is already normalized. |
 | `app/api/v1/run_attribution.py` | `AttributedRun` (dataclass: `request`, `authorized_project_uuid`, `user_email`), `RunNotAttributableError`, and `attributed_run_request` (depends on `bound_run_request`; logs `run_not_attributable`, raises) |
 | `app/core/log_events.py` | `format_log_event(event: str, fields: Mapping[str, str \| None]) -> str`: `event=<name>` followed by `key="<json-escaped>"`, skipping `None` |
 | `app/services/runs/token_issuer.py` | `RunTokenIssuer` (fields per [data-model.md](./data-model.md#run-token-issuer)). `issue()` mints with `generate_jwt_token(authorized_project_uuid, settings.JWT_SECRET_KEY)` and logs `run_token_minted` |
@@ -209,6 +209,8 @@ app/
 └── tests/utils.py                       # modified: bearer-token and RSA key-pair helpers
 CHANGELOG.md                             # modified
 ```
+
+Commit `b18a889` also changes `app/clients/aws/logs_client.py` (a mypy `cast` on `get_query_results`). That file is outside the feature file list above. It is not part of this feature's scope, and it is not added to the list. The commit stays as it is.
 
 **Structure Decision**: Keep the existing single-service layout (Constitution,
 Technology and Layout). Request-boundary concerns (binding, attribution,

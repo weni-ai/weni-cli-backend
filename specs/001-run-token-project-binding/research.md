@@ -121,6 +121,12 @@ runs with zero test cases).
 - A generic dependency factory that builds `Annotated[model, Form()]`
   dynamically. It removes four short functions but hides the body source behind
   runtime-built annotations (Constitution XV, Explicit over Clever).
+- Collapsing the four `bound_*` dependencies into one shared function. FastAPI
+  validates the body from each dependency's parameter annotation, which is what
+  keeps an invalid body at 422. One shared function would drop that model. The
+  comment above `bound_run_request` records this. Runs and agents re-read the
+  multipart field, and channels and ticketers re-read the JSON field, because
+  `data.project_uuid` is already normalized. The four dependencies stay separate.
 - Comparing parsed UUIDs: rejected because it contradicts the exact-string
   clarification.
 
