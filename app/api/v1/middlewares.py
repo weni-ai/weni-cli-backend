@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 NO_AUTH_ENDPOINTS = ["/api/v1/health", "/api/v1/health/", "/api/v1/permissions/verify"]
 NO_VERSION_CHECK_ENDPOINTS = ["/api/v1/health", "/api/v1/health/"]
 ACCEPTABLE_ROLES = [2, 3, 4]  # 2 = contributor, 3 = moderator, 4 = support
+ROLE_GATED_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 
 
 class AuthorizationMiddleware:
@@ -43,7 +44,7 @@ class AuthorizationMiddleware:
 
             if "project_authorization" in response_data:
                 user_role = response_data["project_authorization"]
-                if request.method == "POST" and user_role not in ACCEPTABLE_ROLES:
+                if request.method in ROLE_GATED_METHODS and user_role not in ACCEPTABLE_ROLES:
                     logger.info(f"User with role {user_role} attempted to push. Access denied.")
                     return Response(
                         status_code=status.HTTP_403_FORBIDDEN,

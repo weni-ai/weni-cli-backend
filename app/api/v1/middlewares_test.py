@@ -148,3 +148,53 @@ async def test_role_validation_missing_role(
     # Verify that Connect was called and request was blocked
     mock_check_auth.assert_called_once()
     assert response.status_code == status.HTTP_200_OK  # Se não tem role, passa direto
+
+
+@pytest.mark.parametrize("method", ["PUT", "PATCH", "DELETE"])
+async def test_role_validation_blocks_low_role_for_mutating_methods(
+    auth_middleware: AuthorizationMiddleware,
+    mock_connect_response: Any,
+    mocker: MockerFixture,
+    method: str,
+) -> None:
+    """Test that PUT, PATCH and DELETE are role-gated like POST"""
+    mock_request = mocker.MagicMock(spec=Request)
+    mock_request.method = method
+    mock_request.url.path = "/api/v1/ticketers/abc"
+    mock_request.headers = {"Authorization": "Bearer token", "X-Project-Uuid": "123"}
+
+    mock_response = mock_connect_response
+    mock_response.json.return_value = {"project_authorization": 1}
+    mocker.patch("app.clients.connect_client.ConnectClient.check_authorization", return_value=mock_response)
+
+    async def mock_call_next(request: Request) -> Response:
+        return Response(status_code=status.HTTP_200_OK)
+
+    response = await auth_middleware(mock_request, mock_call_next)
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert "role does not have permission" in cast(bytes, response.body).decode("utf-8")
+
+
+@pytest.mark.parametrize("method", ["PUT", "PATCH", "DELETE"])
+async def test_role_validation_allows_acceptable_role_for_mutating_methods(
+    auth_middleware: AuthorizationMiddleware,
+    mock_connect_response: Any,
+    mocker: MockerFixture,
+    method: str,
+) -> None:
+    mock_request = mocker.MagicMock(spec=Request)
+    mock_request.method = method
+    mock_request.url.path = "/api/v1/ticketers/abc"
+    mock_request.headers = {"Authorization": "Bearer token", "X-Project-Uuid": "123"}
+
+    mock_response = mock_connect_response
+    mock_response.json.return_value = {"project_authorization": 2}
+    mocker.patch("app.clients.connect_client.ConnectClient.check_authorization", return_value=mock_response)
+
+    async def mock_call_next(request: Request) -> Response:
+        return Response(status_code=status.HTTP_200_OK)
+
+    response = await auth_middleware(mock_request, mock_call_next)
+
+    assert response.status_code == status.HTTP_200_OK
