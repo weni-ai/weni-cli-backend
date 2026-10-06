@@ -59,6 +59,13 @@ class CreateChannelRequestModel(BaseModel):
     channel_definition: dict[str, Any]
 
 
+class CreateTicketerRequestModel(BaseModel):
+    """Create ticketer request model."""
+
+    project_uuid: UUID4
+    ticketer_definition: dict[str, Any]
+
+
 class RunEvaluationRequestModel(BaseModel):
     """Run evaluation request model."""
 

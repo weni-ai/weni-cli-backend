@@ -92,3 +92,25 @@ class FlowsClient:
         response = requests.post(url, headers=self.headers, data=form_data)
 
         return response
+
+    def create_ticketer(self, ticketer_definition: dict) -> Response:
+        url = f"{self.base_url}/api/v2/internals/ticketer"
+
+        # Extract fields from ticketer_definition
+        ticketer_type = ticketer_definition.get("ticketer_type", "")
+        name = ticketer_definition.get("name", "")
+        config = ticketer_definition.get("config", {})
+
+        config_payload: dict[str, Any] = dict(config) if isinstance(config, dict) else {}
+
+        form_data = {
+            "user": self.user_email,
+            "org": self.project_uuid,
+            "ticketer_type": ticketer_type,
+            "name": name,
+            "config": json.dumps(config_payload),
+        }
+
+        response = requests.post(url, headers=self.headers, data=form_data)
+
+        return response
