@@ -5,10 +5,11 @@ Channels endpoints for creating channels in Flows.
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from app.api.v1.models.requests import CreateChannelRequestModel
+from app.api.v1.project_binding import bound_channel_request
 from app.clients.flows_client import FlowsClient
 
 router = APIRouter()
@@ -20,7 +21,7 @@ HTTP_BAD_REQUEST = 400
 
 @router.post("")
 async def create_channel(
-    data: CreateChannelRequestModel,
+    data: Annotated[CreateChannelRequestModel, Depends(bound_channel_request)],
     authorization: Annotated[str, Header()],
     x_project_uuid: Annotated[str, Header()],
 ) -> JSONResponse:

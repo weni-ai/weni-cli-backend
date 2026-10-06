@@ -1,6 +1,8 @@
 """Tests for ticketers endpoints."""
 
 import json
+import logging
+import re
 import uuid
 from typing import Any
 
@@ -10,6 +12,7 @@ from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 from requests import Response
 
+from app.api.v1.project_binding import PROJECT_MISMATCH_CODE, PROJECT_MISMATCH_MESSAGE
 from app.core.config import settings
 from app.main import app
 
@@ -311,3 +314,152 @@ def test_create_ticketer_invalid_project_uuid_format(
 
     # Assert
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+_OTHER_PROJECT_UUID = "6f1c2c1e-8b7a-4d3e-9c2b-0a1b2c3d4e5f"
+_INVALID_BODY_HEADER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+_MISSING_BODY_HEADER = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+_AUTHORIZATION = "Bearer test_token"
+_QUOTED_FIELD = re.compile(r'([a-z_]+)=("(?:\\.|[^"\\])*")')
+
+
+def _quoted_fields(message: str) -> list[tuple[str, str]]:
+    return [(key, json.loads(value)) for key, value in _QUOTED_FIELD.findall(message)]
+
+
+def _mismatch_warnings(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING and record.message.startswith("event=project_mismatch_rejected")
+    ]
+
+
+def _headers(project_uuid: str) -> dict[str, str]:
+    return {
+        "Authorization": _AUTHORIZATION,
+        "X-Project-Uuid": project_uuid,
+        "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
+    }
+
+
+def _assert_bearer_absent(caplog: pytest.LogCaptureFixture) -> None:
+    assert _AUTHORIZATION not in caplog.text
+    assert _AUTHORIZATION.removeprefix("Bearer ") not in caplog.text
+
+
+def _assert_mismatch(response: Any) -> None:
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    payload = response.json()
+    assert payload["message"] == PROJECT_MISMATCH_MESSAGE
+    assert payload["data"] is None
+    assert payload["success"] is False
+    assert payload["code"] == PROJECT_MISMATCH_CODE
+    assert str(uuid.UUID(payload["request_id"])) == payload["request_id"]
+    assert set(payload) == {"message", "data", "success", "code", "request_id"}
+
+
+class TestTicketerProjectBinding:
+    def test_mismatched_project_is_403(  # noqa: PLR0913
+        self,
+        client: TestClient,
+        api_path: str,
+        project_uuid: str,
+        valid_request_data: dict[str, Any],
+        mocker: MockerFixture,
+        mock_auth_middleware: None,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        flows_client = mocker.patch("app.api.v1.routers.ticketers.FlowsClient")
+        body = {**valid_request_data, "project_uuid": _OTHER_PROJECT_UUID}
+
+        response = client.post(api_path, json=body, headers=_headers(project_uuid))
+
+        _assert_mismatch(response)
+        flows_client.assert_not_called()
+        flows_client.return_value.create_ticketer.assert_not_called()
+        warnings = _mismatch_warnings(caplog)
+        assert len(warnings) == 1
+        assert dict(_quoted_fields(warnings[0].message))["endpoint"] == api_path
+        _assert_bearer_absent(caplog)
+
+    def test_upper_case_body_is_a_mismatch(  # noqa: PLR0913
+        self,
+        client: TestClient,
+        api_path: str,
+        project_uuid: str,
+        valid_request_data: dict[str, Any],
+        mocker: MockerFixture,
+        mock_auth_middleware: None,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        mocker.patch("app.api.v1.routers.ticketers.FlowsClient")
+        body = {**valid_request_data, "project_uuid": project_uuid.upper()}
+
+        response = client.post(api_path, json=body, headers=_headers(project_uuid))
+
+        _assert_mismatch(response)
+        _assert_bearer_absent(caplog)
+
+    def test_nested_project_uuid_is_not_checked(  # noqa: PLR0913
+        self,
+        client: TestClient,
+        api_path: str,
+        project_uuid: str,
+        valid_request_data: dict[str, Any],
+        mocker: MockerFixture,
+        mock_auth_middleware: None,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        flows_client = mocker.patch("app.api.v1.routers.ticketers.FlowsClient")
+        mock_response = Response()
+        mock_response.status_code = status.HTTP_201_CREATED
+        mock_response._content = json.dumps({"uuid": "ticketer-uuid-123"}).encode()
+        flows_client.return_value.create_ticketer.return_value = mock_response
+        definition = {
+            **valid_request_data["ticketer_definition"],
+            "config": {
+                **valid_request_data["ticketer_definition"]["config"],
+                "project_uuid": _OTHER_PROJECT_UUID,
+            },
+        }
+        body = {"project_uuid": project_uuid, "ticketer_definition": definition}
+
+        response = client.post(api_path, json=body, headers=_headers(project_uuid))
+
+        assert response.status_code == status.HTTP_201_CREATED
+        flows_client.return_value.create_ticketer.assert_called_once_with(definition)
+        assert definition["config"]["project_uuid"] == _OTHER_PROJECT_UUID
+        assert _mismatch_warnings(caplog) == []
+        _assert_bearer_absent(caplog)
+
+    @pytest.mark.parametrize(
+        ("body_project_uuid", "header_project_uuid"),
+        [
+            pytest.param("not-a-uuid", _INVALID_BODY_HEADER, id="not-a-uuid"),
+            pytest.param(None, _MISSING_BODY_HEADER, id="missing"),
+        ],
+    )
+    def test_invalid_or_missing_body_project_returns_422(  # noqa: PLR0913
+        self,
+        client: TestClient,
+        api_path: str,
+        valid_request_data: dict[str, Any],
+        mock_auth_middleware: None,
+        caplog: pytest.LogCaptureFixture,
+        body_project_uuid: str | None,
+        header_project_uuid: str,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        body = {key: value for key, value in valid_request_data.items() if key != "project_uuid"}
+        if body_project_uuid is not None:
+            body["project_uuid"] = body_project_uuid
+
+        response = client.post(api_path, json=body, headers=_headers(header_project_uuid))
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert _mismatch_warnings(caplog) == []
+        _assert_bearer_absent(caplog)

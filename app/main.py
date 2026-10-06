@@ -13,6 +13,7 @@ from sentry_sdk.integrations.starlette import StarletteIntegration
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.v1.middlewares import AuthorizationMiddleware, VersionCheckMiddleware
+from app.api.v1.rejections import RequestRejectedError, handle_request_rejected
 from app.api.v1.routes import router as api_v1_router
 from app.core.config import settings
 
@@ -93,6 +94,7 @@ def create_application() -> FastAPI:
 
     # Include routers
     app.include_router(api_v1_router, prefix=settings.API_PREFIX)
+    app.add_exception_handler(RequestRejectedError, handle_request_rejected)
 
     return app
 

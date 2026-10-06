@@ -7,20 +7,21 @@ from collections.abc import AsyncIterator
 from app.api.v1.models.requests import RunRequestModel
 from app.clients.aws import AWSLambdaClient
 from app.clients.aws.lambda_client import LambdaFunction
-from app.core.config import settings
 from app.core.response import CLIResponse, send_response
-from app.services.jwt_generator import JWT_PROJECT_KEY, generate_jwt_token
+from app.services.jwt_generator import JWT_PROJECT_KEY
+from app.services.runs.token_issuer import RunTokenIssuer
 from app.services.tool.packager import process_tool
 
 logger = logging.getLogger(__name__)
 
 
-async def run(  # noqa: PLR0915
+async def run(  # noqa: PLR0913, PLR0915
     data: RunRequestModel,
     folder_zip: bytes,
     function_name: str,
     request_id: str,
     lambda_client: AWSLambdaClient,
+    token_issuer: RunTokenIssuer,
 ) -> AsyncIterator[bytes]:
     """Stream NDJSON responses while running test cases for a tool (passive agent)."""
 
@@ -132,7 +133,7 @@ async def run(  # noqa: PLR0915
         if isinstance(project, str):
             project = json.loads(project)
 
-        token = generate_jwt_token(str(data.project_uuid), settings.JWT_SECRET_KEY)
+        token = token_issuer.issue()
         project[JWT_PROJECT_KEY] = token
 
         test_event = {

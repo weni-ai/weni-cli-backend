@@ -1,8 +1,9 @@
 """Tests for permissions endpoints."""
 
 import json
+import logging
 import uuid
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastapi import status
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 from requests import Response
 
+from app.api.v1.routers import permissions as permissions_router
 from app.core.config import settings
 from app.main import app
 
@@ -151,3 +153,32 @@ def test_verify_permission_invalid_request_data(client: TestClient, api_path: st
     # Assert
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
     assert "project_uuid" in response.text.lower()
+
+
+def test_verify_permission_uses_body_project_without_a_header(
+    client: TestClient,
+    api_path: str,
+    valid_request_data: dict[str, Any],
+    mock_connect_client: Any,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO)
+    authorization = "Bearer test_token"
+    mock_response = Response()
+    mock_response.status_code = status.HTTP_200_OK
+    mock_connect_client.check_authorization.return_value = mock_response
+
+    response = client.post(
+        api_path,
+        json=valid_request_data,
+        headers={
+            "Authorization": authorization,
+            "X-CLI-Version": settings.CLI_MINIMUM_VERSION,
+        },
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {"status": "ok"}
+    connect_client = cast(Any, permissions_router.ConnectClient)
+    connect_client.assert_called_once_with(authorization, valid_request_data["project_uuid"])
+    assert not any(record.message.startswith("event=project_mismatch_rejected") for record in caplog.records)

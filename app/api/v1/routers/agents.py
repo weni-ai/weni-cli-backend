@@ -6,11 +6,12 @@ import logging
 from typing import Annotated, Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Form, Header, Request
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import StreamingResponse
 from starlette.datastructures import UploadFile
 
 from app.api.v1.models.requests import ConfigureAgentsRequestModel
+from app.api.v1.project_binding import bound_agents_request
 from app.services.agents.active.configurator import ActiveAgentConfigurator
 from app.services.agents.configurators import AgentConfiguratorContext
 from app.services.agents.passive.configurator import PassiveAgentConfigurator
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 @router.post("")
 async def configure_agents(
     request: Request,
-    data: Annotated[ConfigureAgentsRequestModel, Form()],
+    data: Annotated[ConfigureAgentsRequestModel, Depends(bound_agents_request)],
     authorization: Annotated[str, Header()],
 ) -> StreamingResponse:
     """

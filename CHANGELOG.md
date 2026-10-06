@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.1] - 2026-10-05
+### Security
+- `POST /api/v1/runs`, `/api/v1/agents`, `/api/v1/channels` and `/api/v1/ticketers` reject with HTTP 403 `PROJECT_MISMATCH` any request whose body `project_uuid` differs from the authorized `X-Project-Uuid` header, and run tokens are minted only from the authorized project.
+- Runs require a user identity (the bearer token's `email` claim) and otherwise fail with HTTP 403 `RUN_NOT_ATTRIBUTABLE`.
+- Each minted run token, rejected mismatch and unattributable run is recorded as a structured log line (`run_token_minted`, `project_mismatch_rejected`, `run_not_attributable`) that never contains token values.
+
 ## [1.15.0] - 2026-07-09
 - feat: support ticketer creation
 
