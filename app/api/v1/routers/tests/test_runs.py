@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 
 from app.api.v1.project_binding import PROJECT_MISMATCH_CODE, PROJECT_MISMATCH_MESSAGE
+from app.api.v1.run_attribution import RUN_NOT_ATTRIBUTABLE_CODE, RUN_NOT_ATTRIBUTABLE_MESSAGE
 from app.clients.aws.lambda_client import LambdaFunction
 from app.core.config import settings
 from app.main import app
@@ -1255,3 +1256,169 @@ class TestRunProjectBinding:
         assert set(payload) == {"message", "data", "success", "code", "request_id"}
         assert header_project not in response.text
         assert body_project not in response.text
+
+
+def _not_attributable_warnings(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING and record.message.startswith("event=run_not_attributable")
+    ]
+
+
+class TestRunAttribution:
+    @pytest.fixture(autouse=True)
+    def downstream(self, mocker: MockerFixture, mock_auth_middleware: None) -> dict[str, Any]:
+        process_tool = AsyncMock()
+        return {
+            "process_tool": process_tool,
+            "lambda_client": mocker.patch("app.api.v1.routers.runs.AWSLambdaClient"),
+            "processor": mocker.patch("app.services.runs.active_strategy.ActiveAgentProcessor"),
+            "tool_mint": mocker.patch("app.services.runs.tool_strategy.generate_jwt_token"),
+            "active_mint": mocker.patch("app.services.runs.active_strategy.generate_jwt_token"),
+            "process_tool_patch": mocker.patch("app.services.runs.tool_strategy.process_tool", new=process_tool),
+        }
+
+    @pytest.mark.parametrize(
+        "authorization",
+        [
+            pytest.param("Bearer test-token", id="not-a-jwt"),
+            pytest.param(make_cli_bearer_token(None), id="token-without-email"),
+            pytest.param(make_cli_bearer_token(""), id="empty-email"),
+        ],
+    )
+    def test_tool_run_without_identity_is_403(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_tool_request_data: dict[str, Any],
+        downstream: dict[str, Any],
+        caplog: pytest.LogCaptureFixture,
+        authorization: str,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        headers = {**auth_header, "Authorization": authorization}
+        files = {"tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip")}
+
+        response = client.post(api_path, data=run_tool_request_data, files=files, headers=headers)
+
+        self._assert_not_attributable_response(response)
+        downstream["lambda_client"].assert_not_called()
+        assert downstream["process_tool"].call_count == 0
+        downstream["tool_mint"].assert_not_called()
+        downstream["active_mint"].assert_not_called()
+        warnings = _not_attributable_warnings(caplog)
+        assert len(warnings) == 1
+        assert dict(_quoted_fields(warnings[0].message))["request_id"] == response.json()["request_id"]
+        _assert_bearer_absent(caplog, authorization)
+
+    def test_active_run_with_auth_tokens_and_no_email_is_403(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_active_request_data: dict[str, Any],
+        downstream: dict[str, Any],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        authorization = make_cli_bearer_token(None)
+        test_definition = json.loads(run_active_request_data["test_definition"])
+        for test_case in test_definition["tests"].values():
+            test_case["project"]["auth_token"] = "user-supplied-token"
+        body = {**run_active_request_data, "test_definition": json.dumps(test_definition)}
+        headers = {**auth_header, "Authorization": authorization}
+        files = {
+            f"{TEST_ACTIVE_AGENT_KEY}:preprocessor_folder": (
+                "preprocessor.zip",
+                io.BytesIO(TEST_CONTENT),
+                "application/zip",
+            ),
+            f"{TEST_ACTIVE_AGENT_KEY}:{TEST_RULE_KEY}": (
+                "rule.zip",
+                io.BytesIO(TEST_CONTENT),
+                "application/zip",
+            ),
+        }
+
+        response = client.post(api_path, data=body, files=files, headers=headers)
+
+        self._assert_not_attributable_response(response)
+        downstream["processor"].assert_not_called()
+        assert len(_not_attributable_warnings(caplog)) == 1
+        _assert_bearer_absent(caplog, authorization)
+
+    def test_tool_run_with_zero_test_cases_and_no_email_is_403(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_tool_request_data: dict[str, Any],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        authorization = make_cli_bearer_token(None)
+        body = {**run_tool_request_data, "test_definition": json.dumps({"tests": {}})}
+        headers = {**auth_header, "Authorization": authorization}
+        files = {"tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip")}
+
+        response = client.post(api_path, data=body, files=files, headers=headers)
+
+        self._assert_not_attributable_response(response)
+        assert len(_not_attributable_warnings(caplog)) == 1
+        _assert_bearer_absent(caplog, authorization)
+
+    def test_mismatch_wins_over_missing_identity(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_tool_request_data: dict[str, Any],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        authorization = "Bearer test-token"
+        headers = {**auth_header, "Authorization": authorization}
+        body = {**run_tool_request_data, "project_uuid": _MISMATCH_PROJECT_UUID}
+        files = {"tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip")}
+
+        response = client.post(api_path, data=body, files=files, headers=headers)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.json()["code"] == PROJECT_MISMATCH_CODE
+        assert _not_attributable_warnings(caplog) == []
+        fields = dict(_quoted_fields(_mismatch_warnings(caplog)[0].message))
+        assert "user_email" not in fields
+        _assert_bearer_absent(caplog, authorization)
+
+    def test_invalid_body_project_wins_over_missing_identity(
+        self,
+        client: TestClient,
+        api_path: str,
+        auth_header: dict[str, str],
+        run_tool_request_data: dict[str, Any],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+        authorization = "Bearer test-token"
+        headers = {**auth_header, "Authorization": authorization}
+        body = {**run_tool_request_data, "project_uuid": "not-a-uuid"}
+        files = {"tool": ("test_tool.zip", io.BytesIO(TEST_CONTENT), "application/zip")}
+
+        response = client.post(api_path, data=body, files=files, headers=headers)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert _mismatch_warnings(caplog) == []
+        assert _not_attributable_warnings(caplog) == []
+        _assert_bearer_absent(caplog, authorization)
+
+    def _assert_not_attributable_response(self, response: Any) -> None:
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        payload = response.json()
+        assert payload["message"] == RUN_NOT_ATTRIBUTABLE_MESSAGE
+        assert payload["data"] is None
+        assert payload["success"] is False
+        assert payload["code"] == RUN_NOT_ATTRIBUTABLE_CODE
+        assert str(UUID(payload["request_id"])) == payload["request_id"]
+        assert set(payload) == {"message", "data", "success", "code", "request_id"}
