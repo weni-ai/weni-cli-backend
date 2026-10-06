@@ -5,7 +5,7 @@ import logging
 import re
 import time
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import boto3
 
@@ -131,7 +131,7 @@ class AWSLogsClient:
         deadline = time.monotonic() + settings.AWS_LOGS_INSIGHTS_MAX_WAIT_SECONDS
         while True:
             await asyncio.sleep(settings.AWS_LOGS_INSIGHTS_POLL_INTERVAL_SECONDS)
-            response: dict[str, Any] = self.client.get_query_results(queryId=query_id)
+            response = cast(dict[str, Any], self.client.get_query_results(queryId=query_id))
             status = response.get("status", "")
             if status in _INSIGHTS_TERMINAL_STATUSES:
                 return response

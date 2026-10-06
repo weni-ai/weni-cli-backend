@@ -11,14 +11,16 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Form, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from starlette.datastructures import FormData, UploadFile
 
 from app.api.v1.models.requests import RunRequestModel
+from app.api.v1.run_attribution import AttributedRun, attributed_run_request
 from app.clients.aws import AWSLambdaClient
 from app.core.response import CLIResponse, send_response
 from app.services.runs import active_strategy, tool_strategy
+from app.services.runs.token_issuer import RunTokenIssuer
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -27,21 +29,30 @@ logger = logging.getLogger(__name__)
 @router.post("")
 async def run_test(  # noqa: PLR0915
     request: Request,
-    data: Annotated[RunRequestModel, Form()],
+    run: Annotated[AttributedRun, Depends(attributed_run_request)],
     authorization: Annotated[str, Header()],
 ) -> StreamingResponse:
     request_id = str(uuid4())
     logger.info(
-        f"Processing test run for project {data.project_uuid} - type: {data.type} - request_id: {request_id}"
+        f"Processing test run for project {run.request.project_uuid} - type: {run.request.type} - "
+        f"request_id: {request_id}"
     )
-    logger.debug(f"Agent definition: {data.definition}")
+    logger.debug(f"Agent definition: {run.request.definition}")
 
     form = await request.form()
 
     function_name = f"cli-{str(uuid4())}"
     lambda_client = AWSLambdaClient()
+    token_issuer = RunTokenIssuer(
+        authorized_project_uuid=run.authorized_project_uuid,
+        user_email=run.user_email,
+        agent_key=run.request.agent_key,
+        tool_key=None if run.request.type == "active" else run.request.tool_key,
+        run_type=run.request.type,
+        request_id=request_id,
+    )
 
-    if data.type == "active":
+    if run.request.type == "active":
         resources = await _extract_active_resources(form)
         if not resources:
             raise HTTPException(
@@ -52,15 +63,16 @@ async def run_test(  # noqa: PLR0915
         async def active_response_stream() -> AsyncIterator[bytes]:
             try:
                 async for chunk in active_strategy.run(
-                    data=data,
+                    data=run.request,
                     resources=resources,
                     function_name=function_name,
                     request_id=request_id,
                     lambda_client=lambda_client,
+                    token_issuer=token_issuer,
                 ):
                     yield chunk
             except Exception as e:
-                async for chunk in _yield_processing_error(data, e, request_id):
+                async for chunk in _yield_processing_error(run.request, e, request_id):
                     yield chunk
             finally:
                 _safe_delete_function(lambda_client, function_name)
@@ -73,20 +85,21 @@ async def run_test(  # noqa: PLR0915
         raise HTTPException(status_code=400, detail="Tool folder zip is required")
 
     folder_zip = await tool_folder_zip.read()
-    logger.info(f"Found tool folder to process for project {data.project_uuid}")
+    logger.info(f"Found tool folder to process for project {run.request.project_uuid}")
 
     async def passive_response_stream() -> AsyncIterator[bytes]:
         try:
             async for chunk in tool_strategy.run(
-                data=data,
+                data=run.request,
                 folder_zip=folder_zip,
                 function_name=function_name,
                 request_id=request_id,
                 lambda_client=lambda_client,
+                token_issuer=token_issuer,
             ):
                 yield chunk
         except Exception as e:
-            async for chunk in _yield_processing_error(data, e, request_id):
+            async for chunk in _yield_processing_error(run.request, e, request_id):
                 yield chunk
         finally:
             _safe_delete_function(lambda_client, function_name)

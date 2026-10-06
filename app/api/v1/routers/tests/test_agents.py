@@ -2,6 +2,8 @@
 
 import io
 import json
+import logging
+import re
 from collections.abc import Callable
 from typing import Any
 from uuid import UUID
@@ -13,6 +15,7 @@ from pytest_mock import MockerFixture
 from starlette.datastructures import UploadFile
 from starlette.responses import StreamingResponse
 
+from app.api.v1.project_binding import PROJECT_MISMATCH_CODE, PROJECT_MISMATCH_MESSAGE
 from app.core.config import settings
 from app.main import app
 from app.tests.utils import AsyncMock
@@ -642,6 +645,143 @@ class TestAgentConfigEndpoint:
         assert not any(r.get("code") == "PROCESSING_COMPLETED" for r in response_data), (
             "Processing should not complete successfully"
         )
+
+
+_MISMATCH_PROJECT_UUID = "6f1c2c1e-8b7a-4d3e-9c2b-0a1b2c3d4e5f"
+_QUOTED_FIELD = re.compile(r'([a-z_]+)=("(?:\\.|[^"\\])*")')
+
+
+def _quoted_fields(message: str) -> list[tuple[str, str]]:
+    return [(key, json.loads(value)) for key, value in _QUOTED_FIELD.findall(message)]
+
+
+def _mismatch_warnings(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING and record.message.startswith("event=project_mismatch_rejected")
+    ]
+
+
+def _assert_bearer_absent(caplog: pytest.LogCaptureFixture) -> None:
+    assert TEST_TOKEN not in caplog.text
+    assert TEST_TOKEN.removeprefix("Bearer ") not in caplog.text
+
+
+class TestAgentProjectBinding:
+    @pytest.fixture
+    def mock_passive_configurator(self, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> Any:
+        mock_configurator_class = mocker.MagicMock()
+        mock_configurator_instance = mocker.MagicMock()
+        mock_configurator_class.return_value = mock_configurator_instance
+        monkeypatch.setattr("app.api.v1.routers.agents.PassiveAgentConfigurator", mock_configurator_class)
+        return mock_configurator_instance
+
+    @pytest.fixture
+    def mock_helper_functions(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        mock_upload_file = UploadFile(filename="test_tool.zip", file=io.BytesIO(TEST_CONTENT))
+        monkeypatch.setattr(
+            "app.api.v1.routers.agents.extract_agent_resources_files",
+            AsyncMock(return_value={TEST_FULL_TOOL_KEY: mock_upload_file}),
+        )
+        monkeypatch.setattr(
+            "app.api.v1.routers.agents.read_agent_resources_content",
+            AsyncMock(return_value=[(TEST_FULL_TOOL_KEY, TEST_CONTENT)]),
+        )
+        monkeypatch.setattr("app.api.v1.routers.agents.uuid4", lambda: UUID(TEST_REQUEST_ID))
+
+    def _post(
+        self,
+        custom_post_request_factory: Callable[[dict[str, Any], dict[str, Any], dict[str, str] | None], Any],
+        agent_definition: dict[str, Any],
+        project_uuid: str | None,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
+        data = {
+            "type": "passive",
+            "definition": json.dumps(agent_definition),
+            "toolkit_version": TEST_TOOLKIT_VERSION,
+        }
+        if project_uuid is not None:
+            data["project_uuid"] = project_uuid
+        files = {TEST_FULL_TOOL_KEY: ("test.zip", io.BytesIO(TEST_CONTENT), "application/zip")}
+        return custom_post_request_factory(data, files, headers)
+
+    def _assert_mismatch(self, response: Any, header_project: str, body_project: str) -> None:
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        payload = response.json()
+        assert payload["message"] == PROJECT_MISMATCH_MESSAGE
+        assert payload["data"] is None
+        assert payload["success"] is False
+        assert payload["code"] == PROJECT_MISMATCH_CODE
+        assert str(UUID(payload["request_id"])) == payload["request_id"]
+        assert set(payload) == {"message", "data", "success", "code", "request_id"}
+        assert header_project not in response.text
+        assert body_project not in response.text
+
+    def test_mismatched_project_is_403(  # noqa: PLR0913
+        self,
+        custom_post_request_factory: Callable[[dict[str, Any], dict[str, Any], dict[str, str] | None], Any],
+        agent_definition: dict[str, Any],
+        api_path: str,
+        mock_helper_functions: None,
+        mock_passive_configurator: Any,
+        mock_auth_middleware: None,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+
+        response = self._post(custom_post_request_factory, agent_definition, _MISMATCH_PROJECT_UUID)
+
+        self._assert_mismatch(response, TEST_PROJECT_UUID, _MISMATCH_PROJECT_UUID)
+        mock_passive_configurator.configure_agents.assert_not_called()
+        warnings = _mismatch_warnings(caplog)
+        assert len(warnings) == 1
+        fields = dict(_quoted_fields(warnings[0].message))
+        assert fields["endpoint"] == api_path
+        assert "user_email" not in fields
+        _assert_bearer_absent(caplog)
+
+    def test_upper_case_body_is_a_mismatch(  # noqa: PLR0913
+        self,
+        custom_post_request_factory: Callable[[dict[str, Any], dict[str, Any], dict[str, str] | None], Any],
+        agent_definition: dict[str, Any],
+        mock_helper_functions: None,
+        mock_passive_configurator: Any,
+        mock_auth_middleware: None,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+
+        response = self._post(custom_post_request_factory, agent_definition, TEST_PROJECT_UUID.upper())
+
+        self._assert_mismatch(response, TEST_PROJECT_UUID, TEST_PROJECT_UUID.upper())
+        _assert_bearer_absent(caplog)
+
+    @pytest.mark.parametrize(
+        "body_project_uuid",
+        [
+            pytest.param("not-a-uuid", id="not-a-uuid"),
+            pytest.param(None, id="missing"),
+        ],
+    )
+    def test_invalid_or_missing_body_project_returns_422(  # noqa: PLR0913
+        self,
+        custom_post_request_factory: Callable[[dict[str, Any], dict[str, Any], dict[str, str] | None], Any],
+        agent_definition: dict[str, Any],
+        mock_helper_functions: None,
+        mock_passive_configurator: Any,
+        mock_auth_middleware: None,
+        caplog: pytest.LogCaptureFixture,
+        body_project_uuid: str | None,
+    ) -> None:
+        caplog.set_level(logging.INFO)
+
+        response = self._post(custom_post_request_factory, agent_definition, body_project_uuid)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert _mismatch_warnings(caplog) == []
+        _assert_bearer_absent(caplog)
 
 
 # Remove TestHelperFunctions related to push_to_nexus if it's gone
