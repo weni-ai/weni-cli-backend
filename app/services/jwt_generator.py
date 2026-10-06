@@ -22,7 +22,7 @@ def generate_jwt_token(
         project_uuid: The project UUID to include in the token payload.
         secret_key: The RSA private key (PEM format) used to sign the token.
         expiration_minutes: Optional token expiration time in minutes.
-                           If not provided, uses default (60 minutes).
+                           If not provided, uses default (2 minutes).
 
     Returns:
         The encoded JWT token string.
