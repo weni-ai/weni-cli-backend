@@ -53,6 +53,6 @@ resolved.
 
 | Field | Required | Value |
 |---|---|---|
-| `project_uuid` | yes | Raw `X-Project-Uuid` header (the authorized project) |
+| `header_project_uuid` | yes | Raw `X-Project-Uuid` header (the authorized project) |
 | `endpoint` | yes | Request path |
 | `request_id` | yes | The rejection's `request_id`, the same value as in the 403 body |
