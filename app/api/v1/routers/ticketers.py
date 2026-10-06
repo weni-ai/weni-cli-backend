@@ -7,6 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Response
 from fastapi.responses import JSONResponse
+from requests import Response as RequestsResponse
 
 from app.api.v1.models.requests import CreateTicketerRequestModel
 from app.clients.flows_client import FlowsClient
@@ -19,7 +20,7 @@ HTTP_BAD_REQUEST = 400
 HTTP_NO_CONTENT = 204
 
 
-def _raise_if_flows_error(response, action: str) -> None:
+def _raise_if_flows_error(response: RequestsResponse, action: str) -> None:
     if response.status_code >= HTTP_BAD_REQUEST:
         logger.error(f"Error {action} ticketer: {response.status_code} - {response.text}")
         raise HTTPException(status_code=response.status_code, detail=f"Failed to {action} ticketer: {response.text}")
@@ -132,7 +133,7 @@ async def delete_ticketer(
     ticketer_uuid: str,
     authorization: Annotated[str, Header()],
     x_project_uuid: Annotated[str, Header()],
-):
+) -> Response:
     """Delete a ticketer."""
     logger.info(f"Deleting ticketer {ticketer_uuid} for project {x_project_uuid}")
 
