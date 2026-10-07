@@ -187,3 +187,57 @@ class TestFlowsClient:
 
         # Assert
         assert response.status_code == HTTPStatus.BAD_REQUEST
+
+    def test_list_channels_scopes_query_to_project(self, requests_mock: requests_mock.Mocker) -> None:
+        client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
+        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channel/"
+        requests_mock.get(expected_url, status_code=HTTPStatus.OK, json=[self.TEST_RESPONSE_DATA])
+
+        response = client.list_channels(channel_type="WAC", exclude_wpp_demo=True)
+
+        assert response.status_code == HTTPStatus.OK
+        assert requests_mock.last_request is not None
+        query = parse_qs(urlparse(requests_mock.last_request.url).query)
+        assert query["org"] == [self.TEST_PROJECT_UUID]
+        assert query["channel_type"] == ["WAC"]
+        assert query["exclude_wpp_demo"] == ["true"]
+
+    def test_get_channel_uses_detail_url(self, requests_mock: requests_mock.Mocker) -> None:
+        client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
+        channel_uuid = "11111111-1111-4111-8111-111111111111"
+        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channel/{channel_uuid}/"
+        requests_mock.get(expected_url, status_code=HTTPStatus.OK, json=self.TEST_RESPONSE_DATA)
+
+        response = client.get_channel(channel_uuid)
+
+        assert response.status_code == HTTPStatus.OK
+        assert requests_mock.last_request is not None
+        assert urlparse(requests_mock.last_request.url).path == f"/api/v2/internals/channel/{channel_uuid}/"
+
+    def test_update_channel_sends_partial_json(self, requests_mock: requests_mock.Mocker) -> None:
+        client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
+        channel_uuid = "11111111-1111-4111-8111-111111111111"
+        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channel/{channel_uuid}/"
+        requests_mock.patch(expected_url, status_code=HTTPStatus.OK, json=self.TEST_RESPONSE_DATA)
+
+        response = client.update_channel(channel_uuid, name="Renamed", config={"extra": "1"})
+
+        assert response.status_code == HTTPStatus.OK
+        assert requests_mock.last_request is not None
+        assert requests_mock.last_request.json() == {
+            "name": "Renamed",
+            "config": {"extra": "1"},
+            "user": self.TEST_USER_EMAIL,
+        }
+
+    def test_release_channel_sends_user_query(self, requests_mock: requests_mock.Mocker) -> None:
+        client = FlowsClient(self.TEST_AUTH_TOKEN, self.TEST_PROJECT_UUID)
+        channel_uuid = "11111111-1111-4111-8111-111111111111"
+        expected_url = f"{settings.FLOWS_BASE_URL}/api/v2/internals/channel/{channel_uuid}/"
+        requests_mock.delete(expected_url, status_code=HTTPStatus.OK, text="")
+
+        response = client.release_channel(channel_uuid)
+
+        assert response.status_code == HTTPStatus.OK
+        assert requests_mock.last_request is not None
+        assert requests_mock.last_request.qs["user"] == [self.TEST_USER_EMAIL]

@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import UUID4, BaseModel, Json
+from pydantic import UUID4, BaseModel, Field, Json, model_validator
 
 
 class BaseRequestModel(BaseModel):
@@ -57,6 +57,21 @@ class CreateChannelRequestModel(BaseModel):
 
     project_uuid: UUID4
     channel_definition: dict[str, Any]
+
+
+class UpdateChannelRequestModel(BaseModel):
+    """Partial channel update. Fields left out stay as they are in Flows."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    address: str | None = Field(default=None, max_length=255)
+    config: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def require_writable_field(self) -> Self:
+        if self.name is None and self.address is None and self.config is None:
+            message = "At least one of name, address or config is required."
+            raise ValueError(message)
+        return self
 
 
 class CreateTicketerRequestModel(BaseModel):
