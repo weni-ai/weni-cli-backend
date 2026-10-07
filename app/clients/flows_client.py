@@ -93,6 +93,48 @@ class FlowsClient:
 
         return response
 
+    def list_channels(self, channel_type: str | None = None, exclude_wpp_demo: bool = False) -> Response:
+        url = f"{self.base_url}/api/v2/internals/channel/"
+        params: dict[str, str] = {"org": self.project_uuid}
+        if channel_type:
+            params["channel_type"] = channel_type
+        if exclude_wpp_demo:
+            params["exclude_wpp_demo"] = "true"
+
+        return requests.get(url, headers=self.headers, params=params)
+
+    def get_channel(self, channel_uuid: str) -> Response:
+        url = f"{self.base_url}/api/v2/internals/channel/{channel_uuid}/"
+        return requests.get(url, headers=self.headers)
+
+    def update_channel(
+        self,
+        channel_uuid: str,
+        *,
+        name: str | None = None,
+        address: str | None = None,
+        config: dict[str, Any] | None = None,
+    ) -> Response:
+        """PATCH the Flows channel. Config keys are merged; omitted fields stay unchanged."""
+        url = f"{self.base_url}/api/v2/internals/channel/{channel_uuid}/"
+        payload: dict[str, Any] = {}
+        if name is not None:
+            payload["name"] = name
+        if address is not None:
+            payload["address"] = address
+        if config is not None:
+            payload["config"] = config
+        if self.user_email:
+            payload["user"] = self.user_email
+
+        return requests.patch(url, headers=self.headers, json=payload)
+
+    def release_channel(self, channel_uuid: str) -> Response:
+        """Soft-delete: Flows calls Channel.release, which sets is_active=False."""
+        url = f"{self.base_url}/api/v2/internals/channel/{channel_uuid}/"
+        params = {"user": self.user_email} if self.user_email else None
+        return requests.delete(url, headers=self.headers, params=params)
+
     def create_ticketer(self, ticketer_definition: dict) -> Response:
         url = f"{self.base_url}/api/v2/internals/ticketer"
 

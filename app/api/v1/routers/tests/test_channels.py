@@ -425,3 +425,193 @@ class TestChannelProjectBinding:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         assert _mismatch_warnings(caplog) == []
         _assert_bearer_absent(caplog)
+
+
+_CHANNEL_UUID = "11111111-1111-4111-8111-111111111111"
+
+
+def _flows_response(status_code: int, payload: Any) -> Response:
+    mock_response = Response()
+    mock_response.status_code = status_code
+    mock_response._content = json.dumps(payload).encode()
+    return mock_response
+
+
+def _channel_payload(project_uuid: str, **overrides: Any) -> dict[str, Any]:
+    payload = {
+        "uuid": _CHANNEL_UUID,
+        "name": "Test Channel",
+        "address": "+5511999999999",
+        "config": {"wa_pin": "123456"},
+        "org": project_uuid,
+        "is_active": True,
+        "channel_type": "WAC",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_list_channels_success(
+    client: TestClient,
+    api_path: str,
+    project_uuid: str,
+    mock_flows_client: Any,
+    mock_auth_middleware: None,
+) -> None:
+    channels = [_channel_payload(project_uuid)]
+    mock_flows_client.list_channels.return_value = _flows_response(status.HTTP_200_OK, channels)
+
+    response = client.get(
+        api_path,
+        params={"channel_type": "WAC", "exclude_wpp_demo": True},
+        headers=_headers(project_uuid),
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == channels
+    mock_flows_client.list_channels.assert_called_once_with(channel_type="WAC", exclude_wpp_demo=True)
+
+
+def test_list_channels_flows_error(
+    client: TestClient,
+    api_path: str,
+    project_uuid: str,
+    mock_flows_client: Any,
+    mock_auth_middleware: None,
+) -> None:
+    mock_flows_client.list_channels.return_value = _flows_response(
+        status.HTTP_403_FORBIDDEN, {"detail": "Permission denied"}
+    )
+
+    response = client.get(api_path, headers=_headers(project_uuid))
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_get_channel_success(
+    client: TestClient,
+    api_path: str,
+    project_uuid: str,
+    mock_flows_client: Any,
+    mock_auth_middleware: None,
+) -> None:
+    channel = _channel_payload(project_uuid)
+    mock_flows_client.get_channel.return_value = _flows_response(status.HTTP_200_OK, channel)
+
+    response = client.get(f"{api_path}/{_CHANNEL_UUID}", headers=_headers(project_uuid))
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["uuid"] == _CHANNEL_UUID
+    mock_flows_client.get_channel.assert_called_once_with(_CHANNEL_UUID)
+
+
+def test_get_channel_from_another_project_is_404(
+    client: TestClient,
+    api_path: str,
+    project_uuid: str,
+    mock_flows_client: Any,
+    mock_auth_middleware: None,
+) -> None:
+    mock_flows_client.get_channel.return_value = _flows_response(
+        status.HTTP_200_OK, _channel_payload(_OTHER_PROJECT_UUID)
+    )
+
+    response = client.get(f"{api_path}/{_CHANNEL_UUID}", headers=_headers(project_uuid))
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_update_channel_success(
+    client: TestClient,
+    api_path: str,
+    project_uuid: str,
+    mock_flows_client: Any,
+    mock_auth_middleware: None,
+) -> None:
+    mock_flows_client.get_channel.return_value = _flows_response(status.HTTP_200_OK, _channel_payload(project_uuid))
+    updated = _channel_payload(project_uuid, name="Renamed", config={"wa_pin": "123456", "extra": "1"})
+    mock_flows_client.update_channel.return_value = _flows_response(status.HTTP_200_OK, updated)
+
+    response = client.patch(
+        f"{api_path}/{_CHANNEL_UUID}",
+        json={"name": "Renamed", "config": {"extra": "1"}},
+        headers=_headers(project_uuid),
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["name"] == "Renamed"
+    mock_flows_client.update_channel.assert_called_once_with(
+        _CHANNEL_UUID,
+        name="Renamed",
+        address=None,
+        config={"extra": "1"},
+    )
+
+
+def test_update_channel_requires_a_field(
+    client: TestClient,
+    api_path: str,
+    project_uuid: str,
+    mock_auth_middleware: None,
+) -> None:
+    response = client.patch(f"{api_path}/{_CHANNEL_UUID}", json={}, headers=_headers(project_uuid))
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_update_channel_does_not_write_another_project(
+    client: TestClient,
+    api_path: str,
+    project_uuid: str,
+    mock_flows_client: Any,
+    mock_auth_middleware: None,
+) -> None:
+    mock_flows_client.get_channel.return_value = _flows_response(
+        status.HTTP_200_OK, _channel_payload(_OTHER_PROJECT_UUID)
+    )
+
+    response = client.patch(
+        f"{api_path}/{_CHANNEL_UUID}",
+        json={"name": "Renamed"},
+        headers=_headers(project_uuid),
+    )
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    mock_flows_client.update_channel.assert_not_called()
+
+
+def test_delete_channel_success(
+    client: TestClient,
+    api_path: str,
+    project_uuid: str,
+    mock_flows_client: Any,
+    mock_auth_middleware: None,
+) -> None:
+    mock_flows_client.get_channel.return_value = _flows_response(status.HTTP_200_OK, _channel_payload(project_uuid))
+    released = Response()
+    released.status_code = status.HTTP_200_OK
+    released._content = b""
+    mock_flows_client.release_channel.return_value = released
+
+    response = client.delete(f"{api_path}/{_CHANNEL_UUID}", headers=_headers(project_uuid))
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {}
+    mock_flows_client.release_channel.assert_called_once_with(_CHANNEL_UUID)
+
+
+def test_delete_channel_flows_error_skips_release(
+    client: TestClient,
+    api_path: str,
+    project_uuid: str,
+    mock_flows_client: Any,
+    mock_auth_middleware: None,
+) -> None:
+    mock_flows_client.get_channel.return_value = _flows_response(
+        status.HTTP_404_NOT_FOUND, {"detail": "Not found"}
+    )
+
+    response = client.delete(f"{api_path}/{_CHANNEL_UUID}", headers=_headers(project_uuid))
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    mock_flows_client.release_channel.assert_not_called()
