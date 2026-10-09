@@ -463,3 +463,89 @@ class TestTicketerProjectBinding:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         assert _mismatch_warnings(caplog) == []
         _assert_bearer_absent(caplog)
+
+
+def test_list_ticketers_success(
+    client: TestClient,
+    api_path: str,
+    project_uuid: str,
+    mock_flows_client: Any,
+    mock_auth_middleware: None,
+) -> None:
+    """Test successful ticketer list."""
+    mock_response = Response()
+    mock_response.status_code = status.HTTP_200_OK
+    mock_response._content = json.dumps(
+        {"results": [{"uuid": "u", "name": "N", "ticketer_type": "generic"}]}
+    ).encode()
+    mock_flows_client.list_ticketers.return_value = mock_response
+
+    response = client.get(api_path, headers=_headers(project_uuid))
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["results"][0]["name"] == "N"
+    mock_flows_client.list_ticketers.assert_called_once()
+
+
+def test_get_ticketer_not_found(
+    client: TestClient,
+    api_path: str,
+    project_uuid: str,
+    mock_flows_client: Any,
+    mock_auth_middleware: None,
+) -> None:
+    """Test get ticketer when not found."""
+    mock_response = Response()
+    mock_response.status_code = status.HTTP_404_NOT_FOUND
+    mock_response._content = b'{"detail": "Not found."}'
+    mock_flows_client.get_ticketer.return_value = mock_response
+
+    response = client.get(f"{api_path}/{uuid.uuid4()}", headers=_headers(project_uuid))
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    mock_flows_client.get_ticketer.assert_called_once()
+
+
+def test_update_ticketer_success(
+    client: TestClient,
+    api_path: str,
+    project_uuid: str,
+    valid_request_data: dict[str, Any],
+    mock_flows_client: Any,
+    mock_auth_middleware: None,
+) -> None:
+    """Test successful ticketer update."""
+    ticketer_uuid = "11111111-1111-1111-1111-111111111111"
+    mock_response = Response()
+    mock_response.status_code = status.HTTP_200_OK
+    mock_response._content = json.dumps({"uuid": "u", "name": "N"}).encode()
+    mock_flows_client.update_ticketer.return_value = mock_response
+
+    response = client.put(
+        f"{api_path}/{ticketer_uuid}",
+        json=valid_request_data,
+        headers=_headers(project_uuid),
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    mock_flows_client.update_ticketer.assert_called_once()
+
+
+def test_delete_ticketer_no_content(
+    client: TestClient,
+    api_path: str,
+    project_uuid: str,
+    mock_flows_client: Any,
+    mock_auth_middleware: None,
+) -> None:
+    """Test successful ticketer deletion returns 204."""
+    ticketer_uuid = "11111111-1111-1111-1111-111111111111"
+    mock_response = Response()
+    mock_response.status_code = status.HTTP_204_NO_CONTENT
+    mock_response._content = b""
+    mock_flows_client.delete_ticketer.return_value = mock_response
+
+    response = client.delete(f"{api_path}/{ticketer_uuid}", headers=_headers(project_uuid))
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    mock_flows_client.delete_ticketer.assert_called_once()

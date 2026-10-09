@@ -93,24 +93,47 @@ class FlowsClient:
 
         return response
 
-    def create_ticketer(self, ticketer_definition: dict) -> Response:
-        url = f"{self.base_url}/api/v2/internals/ticketer"
-
-        # Extract fields from ticketer_definition
-        ticketer_type = ticketer_definition.get("ticketer_type", "")
-        name = ticketer_definition.get("name", "")
+    def _ticketer_form(self, ticketer_definition: dict) -> dict[str, str]:
         config = ticketer_definition.get("config", {})
-
         config_payload: dict[str, Any] = dict(config) if isinstance(config, dict) else {}
-
-        form_data = {
+        return {
             "user": self.user_email,
             "org": self.project_uuid,
-            "ticketer_type": ticketer_type,
-            "name": name,
+            "ticketer_type": ticketer_definition.get("ticketer_type", ""),
+            "name": ticketer_definition.get("name", ""),
             "config": json.dumps(config_payload),
         }
 
-        response = requests.post(url, headers=self.headers, data=form_data)
+    def _ticketer_item_url(self, ticketer_uuid: str) -> str:
+        return f"{self.base_url}/api/v2/internals/ticketer/{ticketer_uuid}"
 
-        return response
+    def create_ticketer(self, ticketer_definition: dict) -> Response:
+        url = f"{self.base_url}/api/v2/internals/ticketer"
+        return requests.post(url, headers=self.headers, data=self._ticketer_form(ticketer_definition))
+
+    def list_ticketers(self) -> Response:
+        url = f"{self.base_url}/api/v2/internals/ticketer"
+        return requests.get(
+            url, headers=self.headers, params={"user": self.user_email, "org": self.project_uuid}
+        )
+
+    def get_ticketer(self, ticketer_uuid: str) -> Response:
+        return requests.get(
+            self._ticketer_item_url(ticketer_uuid),
+            headers=self.headers,
+            params={"user": self.user_email, "org": self.project_uuid},
+        )
+
+    def update_ticketer(self, ticketer_uuid: str, ticketer_definition: dict) -> Response:
+        return requests.put(
+            self._ticketer_item_url(ticketer_uuid),
+            headers=self.headers,
+            data=self._ticketer_form(ticketer_definition),
+        )
+
+    def delete_ticketer(self, ticketer_uuid: str) -> Response:
+        return requests.delete(
+            self._ticketer_item_url(ticketer_uuid),
+            headers=self.headers,
+            params={"user": self.user_email, "org": self.project_uuid},
+        )
